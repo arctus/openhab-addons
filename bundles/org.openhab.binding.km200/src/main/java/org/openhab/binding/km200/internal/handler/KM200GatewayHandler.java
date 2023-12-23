@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -17,6 +17,7 @@ import static org.openhab.binding.km200.internal.KM200BindingConstants.*;
 import java.math.BigDecimal;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -29,6 +30,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
+import javax.crypto.Cipher;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -70,7 +73,7 @@ public class KM200GatewayHandler extends BaseBridgeHandler {
 
     private final Logger logger = LoggerFactory.getLogger(KM200GatewayHandler.class);
 
-    public static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Collections.singleton(THING_TYPE_KMDEVICE);
+    public static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Set.of(THING_TYPE_KMDEVICE);
 
     private final Map<Channel, JsonObject> sendMap = Collections.synchronizedMap(new LinkedHashMap<>());
 
@@ -89,7 +92,6 @@ public class KM200GatewayHandler extends BaseBridgeHandler {
         super(bridge);
         refreshInterval = 120;
         readDelay = 100;
-        updateStatus(ThingStatus.UNINITIALIZED, ThingStatusDetail.CONFIGURATION_PENDING);
         remoteDevice = new KM200Device(httpClient);
         dataHandler = new KM200DataHandler(remoteDevice);
         executor = Executors.newScheduledThreadPool(2, new NamedThreadFactory("org.openhab.binding.km200", true));
@@ -109,6 +111,17 @@ public class KM200GatewayHandler extends BaseBridgeHandler {
 
     @Override
     public void initialize() {
+        try {
+            int maxKeyLen = Cipher.getMaxAllowedKeyLength("AES/ECB/NoPadding");
+            if (maxKeyLen <= 128) {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
+                        "Java Cryptography Extension (JCE) have to be installed");
+                return;
+            }
+        } catch (NoSuchAlgorithmException e) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "AES encoding not supported");
+            return;
+        }
         if (!getDevice().getInited()) {
             logger.info("Update KM50/100/200 gateway configuration, it takes a minute....");
             getConfiguration();
@@ -323,17 +336,20 @@ public class KM200GatewayHandler extends BaseBridgeHandler {
                 for (String subKey : asProperties) {
                     if (serObj.serviceTreeMap.containsKey(subKey)) {
                         KM200ServiceObject subKeyObj = serObj.serviceTreeMap.get(subKey);
-                        String subKeyType = subKeyObj.getServiceType();
-                        if (!DATA_TYPE_STRING_VALUE.equals(subKeyType) && !DATA_TYPE_FLOAT_VALUE.equals(subKeyType)) {
-                            continue;
-                        }
-                        if (bridgeProperties.containsKey(subKey)) {
-                            bridgeProperties.remove(subKey);
-                        }
-                        Object value = subKeyObj.getValue();
-                        logger.trace("Add Property: {}  :{}", subKey, value);
-                        if (null != value) {
-                            bridgeProperties.put(subKey, value.toString());
+                        if (subKeyObj != null) {
+                            String subKeyType = subKeyObj.getServiceType();
+                            if (!DATA_TYPE_STRING_VALUE.equals(subKeyType)
+                                    && !DATA_TYPE_FLOAT_VALUE.equals(subKeyType)) {
+                                continue;
+                            }
+                            if (bridgeProperties.containsKey(subKey)) {
+                                bridgeProperties.remove(subKey);
+                            }
+                            Object value = subKeyObj.getValue();
+                            logger.trace("Add Property: {}  :{}", subKey, value);
+                            if (null != value) {
+                                bridgeProperties.put(subKey, value.toString());
+                            }
                         }
                     }
                 }

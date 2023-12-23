@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -43,7 +43,6 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
-import org.apache.commons.lang3.StringUtils;
 import org.openhab.binding.digitalstrom.internal.lib.config.Config;
 import org.openhab.binding.digitalstrom.internal.lib.manager.ConnectionManager;
 import org.openhab.binding.digitalstrom.internal.lib.serverconnection.HttpTransport;
@@ -52,10 +51,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The {@link HttpTransportImpl} executes an request to the digitalSTROM-Server.
+ * The {@link HttpTransportImpl} executes a request to the digitalSTROM-Server.
  * <p>
  * If a {@link Config} is given at the constructor. It sets the SSL-Certificate what is set in
- * {@link Config#getCert()}. If there is no SSL-Certificate, but an path to an external SSL-Certificate file what is set
+ * {@link Config#getCert()}. If there is no SSL-Certificate, but a path to an external SSL-Certificate file what is set
  * in {@link Config#getTrustCertPath()} this will be set. If no SSL-Certificate is set in the {@link Config} it will be
  * red out from the server and set in {@link Config#setCert(String)}.
  *
@@ -68,8 +67,8 @@ import org.slf4j.LoggerFactory;
  * </p>
  * <p>
  * If a {@link ConnectionManager} is given at the constructor, the session-token is not needed by requests and the
- * {@link ConnectionListener}, which is registered at the {@link ConnectionManager}, will be automatically informed
- * about
+ * {@link org.openhab.binding.digitalstrom.internal.lib.listener.ConnectionListener}, which is registered at the
+ * {@link ConnectionManager}, will be automatically informed about
  * connection state changes through the {@link #execute(String, int, int)} method.
  * </p>
  *
@@ -334,7 +333,12 @@ public class HttpTransportImpl implements HttpTransport {
     }
 
     private boolean checkNeededSessionToken(String request) {
-        String functionName = StringUtils.substringAfterLast(StringUtils.substringBefore(request, "?"), "/");
+        String requestFirstPart = request;
+        int indexOfSeparator = request.indexOf("?");
+        if (indexOfSeparator >= 0) {
+            requestFirstPart = request.substring(0, request.indexOf("?"));
+        }
+        String functionName = requestFirstPart.substring(requestFirstPart.lastIndexOf("/") + 1);
         return !DsAPIImpl.METHODS_MUST_NOT_BE_LOGGED_IN.contains(functionName);
     }
 
@@ -347,9 +351,13 @@ public class HttpTransportImpl implements HttpTransport {
                 correctedRequest = correctedRequest + "?" + ParameterKeys.TOKEN + "=" + sessionToken;
             }
         } else {
-            correctedRequest = StringUtils.replaceOnce(correctedRequest, StringUtils.substringBefore(
-                    StringUtils.substringAfter(correctedRequest, ParameterKeys.TOKEN + "="), "&"), sessionToken);
-
+            String strippedRequest = correctedRequest
+                    .substring(correctedRequest.indexOf(ParameterKeys.TOKEN + "=") + ParameterKeys.TOKEN.length() + 1);
+            int indexOfSeparator = strippedRequest.indexOf("&");
+            if (indexOfSeparator >= 0) {
+                strippedRequest = strippedRequest.substring(0, indexOfSeparator);
+            }
+            correctedRequest = correctedRequest.replaceFirst(strippedRequest, sessionToken);
         }
         return correctedRequest;
     }

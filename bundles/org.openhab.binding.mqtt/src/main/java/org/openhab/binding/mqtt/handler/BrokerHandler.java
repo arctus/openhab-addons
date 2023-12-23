@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -13,6 +13,7 @@
 package org.openhab.binding.mqtt.handler;
 
 import java.security.NoSuchAlgorithmException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -29,7 +30,6 @@ import org.openhab.binding.mqtt.internal.ssl.PinnedCallback;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.io.transport.mqtt.MqttBrokerConnection;
 import org.openhab.core.io.transport.mqtt.MqttConnectionState;
-import org.openhab.core.io.transport.mqtt.MqttService;
 import org.openhab.core.io.transport.mqtt.MqttWillAndTestament;
 import org.openhab.core.io.transport.mqtt.reconnect.PeriodicReconnectStrategy;
 import org.openhab.core.thing.Bridge;
@@ -40,10 +40,10 @@ import org.slf4j.LoggerFactory;
 /**
  * This handler provided more detailed connection information from a
  * {@link MqttBrokerConnection} via a Thing property, put the Thing
- * offline or online depending on the connection and adds the configured
- * connection to the {@link MqttService}.
+ * offline or online depending on the connection.
  *
  * @author David Graeff - Initial contribution
+ * @author Jimmy Tanagra - Add birth and shutdown message
  */
 @NonNullByDefault
 public class BrokerHandler extends AbstractBrokerHandler implements PinnedCallback {
@@ -57,20 +57,23 @@ public class BrokerHandler extends AbstractBrokerHandler implements PinnedCallba
     @Override
     public void connectionStateChanged(MqttConnectionState state, @Nullable Throwable error) {
         super.connectionStateChanged(state, error);
-        // Store generated client ID if none was set by the user
         final MqttBrokerConnection connection = this.connection;
-        String clientID = config.clientID;
-        if (connection != null && state == MqttConnectionState.CONNECTED && (clientID == null || clientID.isBlank())) {
-            clientID = connection.getClientId();
-            config.clientID = clientID;
-            Configuration editConfig = editConfiguration();
-            editConfig.put("clientid", clientID);
-            updateConfiguration(editConfig);
+        if (connection != null && state == MqttConnectionState.CONNECTED) {
+            String clientID = config.clientID;
+            if (clientID == null || clientID.isBlank()) {
+                // Store generated client ID if none was set by the user
+                clientID = connection.getClientId();
+                config.clientID = clientID;
+                Configuration editConfig = editConfiguration();
+                editConfig.put("clientid", clientID);
+                updateConfiguration(editConfig);
+            }
+            publish(config.birthTopic, config.birthMessage, config.birthRetain);
         }
     }
 
     /**
-     * This method gets called by the {@link PinningSSLContextProvider} if a new public key
+     * This method gets called by the {@link PinTrustManager} if a new public key
      * or certificate hash got pinned. The hash is stored in the thing configuration.
      */
     @Override
@@ -102,7 +105,7 @@ public class BrokerHandler extends AbstractBrokerHandler implements PinnedCallba
 
     @Override
     public void pinnedConnectionDenied(Pin pin) {
-        // We don't need to handle this here, because the {@link PinningSSLContextProvider}
+        // We don't need to handle this here, because the {@link PinTrustManager}
         // will throw a CertificateException if the connection fails.
     }
 
@@ -114,6 +117,8 @@ public class BrokerHandler extends AbstractBrokerHandler implements PinnedCallba
     public void dispose() {
         try {
             if (connection != null) {
+                publish(config.shutdownTopic, config.shutdownMessage, config.shutdownRetain).get(1000,
+                        TimeUnit.MILLISECONDS);
                 connection.stop().get(1000, TimeUnit.MILLISECONDS);
             } else {
                 logger.warn("Trying to dispose handler {} but connection is already null. Most likely this is a bug.",
@@ -131,12 +136,12 @@ public class BrokerHandler extends AbstractBrokerHandler implements PinnedCallba
 
     /**
      * Reads the thing configuration related to public key or certificate pinning, creates an appropriate a
-     * {@link PinningSSLContextProvider} and assigns it to the {@link MqttBrokerConnection} instance.
+     * {@link PinTrustManager} and assigns it to the {@link MqttBrokerConnection} instance.
      * The instance need to be set before calling this method. If the SHA-256 algorithm is not supported
      * by the platform, this method will do nothing.
      *
      * @throws IllegalArgumentException Throws this exception, if provided hash values cannot be
-     *             assigned to the {@link PinningSSLContextProvider}.
+     *             assigned to the {@link PinTrustManager}.
      */
     protected void assignSSLContextProvider(BrokerHandlerConfig config, MqttBrokerConnection connection,
             PinnedCallback callback) throws IllegalArgumentException {
@@ -149,13 +154,13 @@ public class BrokerHandler extends AbstractBrokerHandler implements PinnedCallba
             try {
                 Pin pin;
                 if (config.certificate.isBlank()) {
-                    pin = Pin.LearningPin(PinType.CERTIFICATE_TYPE);
+                    pin = Pin.learningPin(PinType.CERTIFICATE_TYPE);
                 } else {
                     String[] split = config.certificate.split(":");
                     if (split.length != 2) {
                         throw new NoSuchAlgorithmException("Algorithm is missing");
                     }
-                    pin = Pin.CheckingPin(PinType.CERTIFICATE_TYPE, new PinMessageDigest(split[0]),
+                    pin = Pin.checkingPin(PinType.CERTIFICATE_TYPE, new PinMessageDigest(split[0]),
                             HexUtils.hexToBytes(split[1]));
                 }
                 trustManager.addPinning(pin);
@@ -167,13 +172,13 @@ public class BrokerHandler extends AbstractBrokerHandler implements PinnedCallba
             try {
                 Pin pin;
                 if (config.publickey.isBlank()) {
-                    pin = Pin.LearningPin(PinType.PUBLIC_KEY_TYPE);
+                    pin = Pin.learningPin(PinType.PUBLIC_KEY_TYPE);
                 } else {
                     String[] split = config.publickey.split(":");
                     if (split.length != 2) {
                         throw new NoSuchAlgorithmException("Algorithm is missing");
                     }
-                    pin = Pin.CheckingPin(PinType.PUBLIC_KEY_TYPE, new PinMessageDigest(split[0]),
+                    pin = Pin.checkingPin(PinType.PUBLIC_KEY_TYPE, new PinMessageDigest(split[0]),
                             HexUtils.hexToBytes(split[1]));
                 }
                 trustManager.addPinning(pin);
@@ -195,8 +200,8 @@ public class BrokerHandler extends AbstractBrokerHandler implements PinnedCallba
             throw new IllegalArgumentException("Host is empty!");
         }
 
-        final MqttBrokerConnection connection = new MqttBrokerConnection(host, config.port, config.secure,
-                config.clientID);
+        final MqttBrokerConnection connection = new MqttBrokerConnection(config.protocol, config.mqttVersion, host,
+                config.port, config.secure, config.hostnameValidated, config.clientID);
 
         final String username = config.username;
         final String password = config.password;
@@ -235,5 +240,16 @@ public class BrokerHandler extends AbstractBrokerHandler implements PinnedCallba
         this.connection = connection;
 
         super.initialize();
+    }
+
+    /**
+     * Calls the @NonNull MqttBrokerConnection::publish() with @Nullable topic and message
+     */
+    private CompletableFuture<Boolean> publish(@Nullable String topic, @Nullable String message, boolean retain) {
+        if (topic == null || connection == null) {
+            return CompletableFuture.completedFuture(true);
+        }
+        String nonNullMessage = message != null ? message : "";
+        return connection.publish(topic, nonNullMessage.getBytes(), connection.getQos(), retain);
     }
 }

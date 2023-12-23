@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -18,9 +18,9 @@ import java.io.IOException;
 import java.net.UnknownHostException;
 import java.time.ZonedDateTime;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -29,6 +29,7 @@ import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.omnilink.internal.AudioPlayer;
 import org.openhab.binding.omnilink.internal.SystemType;
 import org.openhab.binding.omnilink.internal.TemperatureFormat;
+import org.openhab.binding.omnilink.internal.action.OmnilinkActions;
 import org.openhab.binding.omnilink.internal.config.OmnilinkBridgeConfig;
 import org.openhab.binding.omnilink.internal.discovery.OmnilinkDiscoveryService;
 import org.openhab.binding.omnilink.internal.exceptions.BridgeOfflineException;
@@ -105,7 +106,7 @@ public class OmnilinkBridgeHandler extends BaseBridgeHandler implements Notifica
 
     @Override
     public Collection<Class<? extends ThingHandlerService>> getServices() {
-        return Collections.singleton(OmnilinkDiscoveryService.class);
+        return Set.of(OmnilinkDiscoveryService.class, OmnilinkActions.class);
     }
 
     public void sendOmnilinkCommand(final int message, final int param1, final int param2)
@@ -158,6 +159,17 @@ public class OmnilinkBridgeHandler extends BaseBridgeHandler implements Notifica
         }
     }
 
+    public void synchronizeControllerTime(ZonedDateTime zdt) {
+        boolean inDaylightSavings = zdt.getZone().getRules().isDaylightSavings(zdt.toInstant());
+        try {
+            getOmniConnection().setTimeCommand(zdt.getYear() - 2000, zdt.getMonthValue(), zdt.getDayOfMonth(),
+                    zdt.getDayOfWeek().getValue(), zdt.getHour(), zdt.getMinute(), inDaylightSavings);
+        } catch (IOException | OmniNotConnectedException | OmniInvalidResponseException
+                | OmniUnknownMessageTypeException e) {
+            logger.debug("Could not send set date time command to OmniLink Controller: {}", e.getMessage());
+        }
+    }
+
     private SystemFeatures reqSystemFeatures()
             throws OmniInvalidResponseException, OmniUnknownMessageTypeException, BridgeOfflineException {
         try {
@@ -178,27 +190,11 @@ public class OmnilinkBridgeHandler extends BaseBridgeHandler implements Notifica
         }
 
         switch (channelUID.getId()) {
-            case CHANNEL_SYSTEMDATE:
-                if (command instanceof DateTimeType) {
-                    ZonedDateTime zdt = ((DateTimeType) command).getZonedDateTime();
-                    boolean inDaylightSavings = zdt.getZone().getRules().isDaylightSavings(zdt.toInstant());
-                    try {
-                        getOmniConnection().setTimeCommand(zdt.getYear() - 2000, zdt.getMonthValue(),
-                                zdt.getDayOfMonth(), zdt.getDayOfWeek().getValue(), zdt.getHour(), zdt.getMinute(),
-                                inDaylightSavings);
-                    } catch (IOException | OmniNotConnectedException | OmniInvalidResponseException
-                            | OmniUnknownMessageTypeException e) {
-                        logger.debug("Could not send Set Time command to OmniLink Controller: {}", e.getMessage());
-                    }
-                } else {
-                    logger.debug("Invalid command: {}, must be DateTimeType", command);
-                }
-                break;
             case CHANNEL_CONSOLE_ENABLE_DISABLE_BEEPER:
-                if (command instanceof StringType) {
+                if (command instanceof StringType stringCommand) {
                     try {
                         sendOmnilinkCommand(CommandMessage.CMD_CONSOLE_ENABLE_DISABLE_BEEPER,
-                                ((StringType) command).equals(StringType.valueOf("OFF")) ? 0 : 1, 0);
+                                stringCommand.equals(StringType.valueOf("OFF")) ? 0 : 1, 0);
                         updateState(CHANNEL_CONSOLE_ENABLE_DISABLE_BEEPER, UnDefType.UNDEF);
                     } catch (NumberFormatException | OmniInvalidResponseException | OmniUnknownMessageTypeException
                             | BridgeOfflineException e) {
@@ -209,9 +205,9 @@ public class OmnilinkBridgeHandler extends BaseBridgeHandler implements Notifica
                 }
                 break;
             case CHANNEL_CONSOLE_BEEP:
-                if (command instanceof DecimalType) {
+                if (command instanceof DecimalType decimalCommand) {
                     try {
-                        sendOmnilinkCommand(CommandMessage.CMD_CONSOLE_BEEP, ((DecimalType) command).intValue(), 0);
+                        sendOmnilinkCommand(CommandMessage.CMD_CONSOLE_BEEP, decimalCommand.intValue(), 0);
                         updateState(CHANNEL_CONSOLE_BEEP, UnDefType.UNDEF);
                     } catch (NumberFormatException | OmniInvalidResponseException | OmniUnknownMessageTypeException
                             | BridgeOfflineException e) {
@@ -291,24 +287,21 @@ public class OmnilinkBridgeHandler extends BaseBridgeHandler implements Notifica
         if (objectStatus != null) {
             Status[] statuses = objectStatus.getStatuses();
             for (Status status : statuses) {
-                if (status instanceof ExtendedUnitStatus) {
-                    ExtendedUnitStatus unitStatus = (ExtendedUnitStatus) status;
+                if (status instanceof ExtendedUnitStatus unitStatus) {
                     int unitNumber = unitStatus.getNumber();
 
                     logger.debug("Received status update for Unit: {}, status: {}", unitNumber, unitStatus);
                     Optional<Thing> theThing = getUnitThing(unitNumber);
                     theThing.map(Thing::getHandler)
                             .ifPresent(theHandler -> ((UnitHandler) theHandler).handleStatus(unitStatus));
-                } else if (status instanceof ExtendedZoneStatus) {
-                    ExtendedZoneStatus zoneStatus = (ExtendedZoneStatus) status;
+                } else if (status instanceof ExtendedZoneStatus zoneStatus) {
                     int zoneNumber = zoneStatus.getNumber();
 
                     logger.debug("Received status update for Zone: {}, status: {}", zoneNumber, zoneStatus);
                     Optional<Thing> theThing = getChildThing(THING_TYPE_ZONE, zoneNumber);
                     theThing.map(Thing::getHandler)
                             .ifPresent(theHandler -> ((ZoneHandler) theHandler).handleStatus(zoneStatus));
-                } else if (status instanceof ExtendedAreaStatus) {
-                    ExtendedAreaStatus areaStatus = (ExtendedAreaStatus) status;
+                } else if (status instanceof ExtendedAreaStatus areaStatus) {
                     int areaNumber = areaStatus.getNumber();
 
                     logger.debug("Received status update for Area: {}, status: {}", areaNumber, areaStatus);
@@ -325,16 +318,14 @@ public class OmnilinkBridgeHandler extends BaseBridgeHandler implements Notifica
                         theThing.map(Thing::getHandler)
                                 .ifPresent(theHandler -> ((AbstractAreaHandler) theHandler).handleStatus(areaStatus));
                     });
-                } else if (status instanceof ExtendedAccessControlReaderLockStatus) {
-                    ExtendedAccessControlReaderLockStatus lockStatus = (ExtendedAccessControlReaderLockStatus) status;
+                } else if (status instanceof ExtendedAccessControlReaderLockStatus lockStatus) {
                     int lockNumber = lockStatus.getNumber();
 
                     logger.debug("Received status update for Lock: {}, status: {}", lockNumber, lockStatus);
                     Optional<Thing> theThing = getChildThing(THING_TYPE_LOCK, lockNumber);
                     theThing.map(Thing::getHandler)
                             .ifPresent(theHandler -> ((LockHandler) theHandler).handleStatus(lockStatus));
-                } else if (status instanceof ExtendedThermostatStatus) {
-                    ExtendedThermostatStatus thermostatStatus = (ExtendedThermostatStatus) status;
+                } else if (status instanceof ExtendedThermostatStatus thermostatStatus) {
                     int thermostatNumber = thermostatStatus.getNumber();
 
                     logger.debug("Received status update for Thermostat: {}, status: {}", thermostatNumber,
@@ -342,8 +333,7 @@ public class OmnilinkBridgeHandler extends BaseBridgeHandler implements Notifica
                     Optional<Thing> theThing = getChildThing(THING_TYPE_THERMOSTAT, thermostatNumber);
                     theThing.map(Thing::getHandler)
                             .ifPresent(theHandler -> ((ThermostatHandler) theHandler).handleStatus(thermostatStatus));
-                } else if (status instanceof ExtendedAudioZoneStatus) {
-                    ExtendedAudioZoneStatus audioZoneStatus = (ExtendedAudioZoneStatus) status;
+                } else if (status instanceof ExtendedAudioZoneStatus audioZoneStatus) {
                     int audioZoneNumber = audioZoneStatus.getNumber();
 
                     logger.debug("Received status update for Audio Zone: {}, status: {}", audioZoneNumber,
@@ -351,8 +341,7 @@ public class OmnilinkBridgeHandler extends BaseBridgeHandler implements Notifica
                     Optional<Thing> theThing = getChildThing(THING_TYPE_AUDIO_ZONE, audioZoneNumber);
                     theThing.map(Thing::getHandler)
                             .ifPresent(theHandler -> ((AudioZoneHandler) theHandler).handleStatus(audioZoneStatus));
-                } else if (status instanceof ExtendedAuxSensorStatus) {
-                    ExtendedAuxSensorStatus auxSensorStatus = (ExtendedAuxSensorStatus) status;
+                } else if (status instanceof ExtendedAuxSensorStatus auxSensorStatus) {
                     int auxSensorNumber = auxSensorStatus.getNumber();
 
                     // Aux Sensors can be either temperature or humidity, need to check both.
@@ -485,14 +474,14 @@ public class OmnilinkBridgeHandler extends BaseBridgeHandler implements Notifica
             OmniUnknownMessageTypeException {
         SystemStatus status = getOmniConnection().reqSystemStatus();
         logger.debug("Received system status: {}", status);
-        // Let's update system time
+        // Update controller's reported time
         String dateString = new StringBuilder().append(2000 + status.getYear()).append("-")
                 .append(String.format("%02d", status.getMonth())).append("-")
                 .append(String.format("%02d", status.getDay())).append("T")
                 .append(String.format("%02d", status.getHour())).append(":")
                 .append(String.format("%02d", status.getMinute())).append(":")
                 .append(String.format("%02d", status.getSecond())).toString();
-        updateState(CHANNEL_SYSTEMDATE, new DateTimeType(dateString));
+        updateState(CHANNEL_SYSTEM_DATE, new DateTimeType(dateString));
     }
 
     public Message reqObjectProperties(int objectType, int objectNum, int direction, int filter1, int filter2,
@@ -587,10 +576,11 @@ public class OmnilinkBridgeHandler extends BaseBridgeHandler implements Notifica
         try {
             SystemInformation systemInformation = reqSystemInformation();
             Map<String, String> properties = editProperties();
-            properties.put(THING_PROPERTIES_MODEL_NUMBER, Integer.toString(systemInformation.getModel()));
-            properties.put(THING_PROPERTIES_MAJOR_VERSION, Integer.toString(systemInformation.getMajor()));
-            properties.put(THING_PROPERTIES_MINOR_VERSION, Integer.toString(systemInformation.getMinor()));
-            properties.put(THING_PROPERTIES_REVISION, Integer.toString(systemInformation.getRevision()));
+            properties.put(Thing.PROPERTY_MODEL_ID, Integer.toString(systemInformation.getModel()));
+            properties.put(Thing.PROPERTY_FIRMWARE_VERSION,
+                    Integer.toString(systemInformation.getMajor()) + "."
+                            + Integer.toString(systemInformation.getMinor()) + "."
+                            + Integer.toString(systemInformation.getRevision()));
             properties.put(THING_PROPERTIES_PHONE_NUMBER, systemInformation.getPhone());
             updateProperties(properties);
         } catch (OmniInvalidResponseException | OmniUnknownMessageTypeException | BridgeOfflineException e) {

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -16,8 +16,8 @@ import static org.openhab.binding.automower.internal.AutomowerBindingConstants.*
 
 import java.time.Instant;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -34,12 +34,14 @@ import org.openhab.binding.automower.internal.actions.AutomowerActions;
 import org.openhab.binding.automower.internal.bridge.AutomowerBridge;
 import org.openhab.binding.automower.internal.bridge.AutomowerBridgeHandler;
 import org.openhab.binding.automower.internal.rest.api.automowerconnect.dto.Mower;
+import org.openhab.binding.automower.internal.rest.api.automowerconnect.dto.Position;
 import org.openhab.binding.automower.internal.rest.api.automowerconnect.dto.RestrictedReason;
 import org.openhab.binding.automower.internal.rest.api.automowerconnect.dto.State;
 import org.openhab.binding.automower.internal.rest.exceptions.AutomowerCommunicationException;
 import org.openhab.core.i18n.TimeZoneProvider;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.DecimalType;
+import org.openhab.core.library.types.PointType;
 import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.library.unit.Units;
@@ -66,11 +68,11 @@ import com.google.gson.Gson;
  * sent to one of the channels.
  *
  * @author Markus Pfleger - Initial contribution
- * @author Marcin Czeczko - Added support for planner & calendar data
+ * @author Marcin Czeczko - Added support for planner and calendar data
  */
 @NonNullByDefault
 public class AutomowerHandler extends BaseThingHandler {
-    public static final Set<ThingTypeUID> SUPPORTED_THING_TYPES = Collections.singleton(THING_TYPE_AUTOMOWER);
+    public static final Set<ThingTypeUID> SUPPORTED_THING_TYPES = Set.of(THING_TYPE_AUTOMOWER);
     private static final String NO_ID = "NO_ID";
     private static final long DEFAULT_COMMAND_DURATION_MIN = 60;
     private static final long DEFAULT_POLLING_INTERVAL_S = TimeUnit.MINUTES.toSeconds(10);
@@ -117,8 +119,8 @@ public class AutomowerHandler extends BaseThingHandler {
     }
 
     private Optional<Integer> getCommandValue(Type type) {
-        if (type instanceof DecimalType) {
-            return Optional.of(((DecimalType) type).intValue());
+        if (type instanceof DecimalType command) {
+            return Optional.of(command.intValue());
         }
         return Optional.empty();
     }
@@ -129,7 +131,7 @@ public class AutomowerHandler extends BaseThingHandler {
 
     @Override
     public Collection<Class<? extends ThingHandlerService>> getServices() {
-        return Collections.singleton(AutomowerActions.class);
+        return Set.of(AutomowerActions.class);
     }
 
     @Override
@@ -160,8 +162,7 @@ public class AutomowerHandler extends BaseThingHandler {
         Bridge bridge = getBridge();
         if (bridge != null) {
             ThingHandler handler = bridge.getHandler();
-            if (handler instanceof AutomowerBridgeHandler) {
-                AutomowerBridgeHandler bridgeHandler = (AutomowerBridgeHandler) handler;
+            if (handler instanceof AutomowerBridgeHandler bridgeHandler) {
                 return bridgeHandler.getAutomowerBridge();
             }
         }
@@ -313,6 +314,16 @@ public class AutomowerHandler extends BaseThingHandler {
 
             updateState(CHANNEL_CALENDAR_TASKS,
                     new StringType(gson.toJson(mower.getAttributes().getCalendar().getTasks())));
+
+            updateState(LAST_POSITION,
+                    new PointType(new DecimalType(mower.getAttributes().getLastPosition().getLatitude()),
+                            new DecimalType(mower.getAttributes().getLastPosition().getLongitude())));
+            ArrayList<Position> positions = mower.getAttributes().getPositions();
+            for (int i = 0; i < positions.size(); i++) {
+                updateState(CHANNEL_POSITIONS.get(i), new PointType(new DecimalType(positions.get(i).getLatitude()),
+                        new DecimalType(positions.get(i).getLongitude())));
+
+            }
         }
     }
 

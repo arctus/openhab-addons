@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -14,7 +14,7 @@ package org.openhab.binding.kostalinverter.internal.thirdgeneration;
 
 import static org.openhab.binding.kostalinverter.internal.thirdgeneration.ThirdGenerationBindingConstants.*;
 
-import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -252,6 +252,10 @@ public class ThirdGenerationHandler extends BaseThingHandler {
                 updateState(channeluid, new QuantityType<>(value, Units.VOLT));
                 break;
             }
+            case HERTZ: {
+                updateState(channeluid, new QuantityType<>(value, Units.HERTZ));
+                break;
+            }
             default: {
                 // unknown datatype
                 logger.debug("{} not known!", dataType);
@@ -323,7 +327,7 @@ public class ThirdGenerationHandler extends BaseThingHandler {
             if (statusCode == 503) {
                 // internal communication error
                 // This can happen if the device is not ready yet for communication
-                updateStatus(ThingStatus.UNINITIALIZED);
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR);
                 return;
             }
         } catch (InterruptedException | TimeoutException | ExecutionException e) {
@@ -439,8 +443,8 @@ public class ThirdGenerationHandler extends BaseThingHandler {
             return;
         }
         try {
-            data = cipher.doFinal(token.getBytes("UTF-8"));
-        } catch (IllegalBlockSizeException | BadPaddingException | UnsupportedEncodingException e1) {
+            data = cipher.doFinal(token.getBytes(StandardCharsets.UTF_8));
+        } catch (IllegalBlockSizeException | BadPaddingException e1) {
             // No JSON answer received
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR, COMMUNICATION_ERROR_JSON);
             return;

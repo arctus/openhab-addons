@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -14,12 +14,13 @@ package org.openhab.binding.nuvo.internal;
 
 import static org.openhab.binding.nuvo.internal.NuvoBindingConstants.*;
 
-import java.util.Collections;
 import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.eclipse.jetty.client.HttpClient;
 import org.openhab.binding.nuvo.internal.handler.NuvoHandler;
+import org.openhab.core.io.net.http.HttpClientFactory;
 import org.openhab.core.io.transport.serial.SerialPortManager;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingTypeUID;
@@ -40,11 +41,13 @@ import org.osgi.service.component.annotations.Reference;
 @Component(configurationPid = "binding.nuvo", service = ThingHandlerFactory.class)
 public class NuvoHandlerFactory extends BaseThingHandlerFactory {
 
-    private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Collections.singleton(THING_TYPE_AMP);
+    private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Set.of(THING_TYPE_AMP);
 
     private final SerialPortManager serialPortManager;
 
     private final NuvoStateDescriptionOptionProvider stateDescriptionProvider;
+
+    private final HttpClient httpClient;
 
     @Override
     public boolean supportsThingType(ThingTypeUID thingTypeUID) {
@@ -53,9 +56,11 @@ public class NuvoHandlerFactory extends BaseThingHandlerFactory {
 
     @Activate
     public NuvoHandlerFactory(final @Reference NuvoStateDescriptionOptionProvider provider,
-            final @Reference SerialPortManager serialPortManager) {
+            final @Reference SerialPortManager serialPortManager,
+            final @Reference HttpClientFactory httpClientFactory) {
         this.stateDescriptionProvider = provider;
         this.serialPortManager = serialPortManager;
+        this.httpClient = httpClientFactory.getCommonHttpClient();
     }
 
     @Override
@@ -63,7 +68,7 @@ public class NuvoHandlerFactory extends BaseThingHandlerFactory {
         ThingTypeUID thingTypeUID = thing.getThingTypeUID();
 
         if (SUPPORTED_THING_TYPES_UIDS.contains(thingTypeUID)) {
-            return new NuvoHandler(thing, stateDescriptionProvider, serialPortManager);
+            return new NuvoHandler(thing, stateDescriptionProvider, serialPortManager, httpClient);
         }
 
         return null;

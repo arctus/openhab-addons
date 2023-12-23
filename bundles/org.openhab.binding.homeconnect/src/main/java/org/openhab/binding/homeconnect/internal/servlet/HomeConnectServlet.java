@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -95,6 +95,7 @@ public class HomeConnectServlet extends HttpServlet {
     private static final String PARAM_BRIDGE_ID = "bridgeId";
     private static final String PARAM_THING_ID = "thingId";
     private static final String PARAM_PATH = "path";
+    private static final String PARAM_REDIRECT_URI = "redirectUri";
     private static final String ACTION_AUTHORIZE = "authorize";
     private static final String ACTION_CLEAR_CREDENTIALS = "clearCredentials";
     private static final String ACTION_SHOW_DETAILS = "show-details";
@@ -163,9 +164,7 @@ public class HomeConnectServlet extends HttpServlet {
 
         String path = request.getPathInfo();
         if (path == null || path.isEmpty() || path.equals(ROOT_PATH)) {
-            @Nullable
             String code = request.getParameter(PARAM_CODE);
-            @Nullable
             String state = request.getParameter(PARAM_STATE);
             if (code != null && state != null && !code.trim().isEmpty() && !state.trim().isEmpty()) {
                 getBridgeAuthenticationPage(request, response, code, state);
@@ -173,9 +172,7 @@ public class HomeConnectServlet extends HttpServlet {
                 getBridgesPage(request, response);
             }
         } else if (pathMatches(path, APPLIANCES_PATH)) {
-            @Nullable
             String action = request.getParameter(PARAM_ACTION);
-            @Nullable
             String thingId = request.getParameter(PARAM_THING_ID);
             if (action != null && thingId != null && !action.trim().isEmpty() && !thingId.trim().isEmpty()) {
                 processApplianceActions(response, action, thingId);
@@ -183,9 +180,7 @@ public class HomeConnectServlet extends HttpServlet {
                 getAppliancesPage(request, response);
             }
         } else if (pathMatches(path, REQUEST_LOG_PATH)) {
-            @Nullable
             String export = request.getParameter(PARAM_EXPORT);
-            @Nullable
             String bridgeId = request.getParameter(PARAM_BRIDGE_ID);
             if (export != null && bridgeId != null && !export.trim().isEmpty() && !bridgeId.trim().isEmpty()) {
                 getRequestLogExport(response, bridgeId);
@@ -193,9 +188,7 @@ public class HomeConnectServlet extends HttpServlet {
                 getRequestLogPage(request, response);
             }
         } else if (pathMatches(path, EVENT_LOG_PATH)) {
-            @Nullable
             String export = request.getParameter(PARAM_EXPORT);
-            @Nullable
             String bridgeId = request.getParameter(PARAM_BRIDGE_ID);
             if (export != null && bridgeId != null && !export.trim().isEmpty() && !bridgeId.trim().isEmpty()) {
                 getEventLogExport(response, bridgeId);
@@ -225,11 +218,8 @@ public class HomeConnectServlet extends HttpServlet {
             }
         } else if (pathMatches(path, APPLIANCES_PATH)) {
             String requestPayload = request.getReader().lines().collect(Collectors.joining(System.lineSeparator()));
-            @Nullable
             String action = request.getParameter(PARAM_ACTION);
-            @Nullable
             String thingId = request.getParameter(PARAM_THING_ID);
-            @Nullable
             String targetPath = request.getParameter(PARAM_PATH);
 
             if ((ACTION_PUT_RAW.equals(action) || ACTION_GET_RAW.equals(action)) && thingId != null
@@ -366,7 +356,6 @@ public class HomeConnectServlet extends HttpServlet {
                     String actionResponse = bridgeHandler.get().getApiClient().putRaw(haId, path, body);
                     response.getWriter().write(actionResponse);
                 } else if (ACTION_GET_RAW.equals(action)) {
-                    @Nullable
                     String actionResponse = bridgeHandler.get().getApiClient().getRaw(haId, path, true);
                     if (actionResponse == null) {
                         response.getWriter().write("{\"status\": \"No response\"}");
@@ -393,9 +382,7 @@ public class HomeConnectServlet extends HttpServlet {
     }
 
     private void postBridgesPage(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        @Nullable
         String action = request.getParameter(PARAM_ACTION);
-        @Nullable
         String bridgeId = request.getParameter(PARAM_BRIDGE_ID);
         Optional<HomeConnectBridgeHandler> bridgeHandlerOptional = bridgeHandlers.stream().filter(
                 homeConnectBridgeHandler -> homeConnectBridgeHandler.getThing().getUID().toString().equals(bridgeId))
@@ -406,8 +393,11 @@ public class HomeConnectServlet extends HttpServlet {
             HomeConnectBridgeHandler bridgeHandler = bridgeHandlerOptional.get();
             if (ACTION_AUTHORIZE.equals(action)) {
                 try {
-                    String authorizationUrl = bridgeHandler.getOAuthClientService().getAuthorizationUrl(null, null,
-                            bridgeHandler.getThing().getUID().getAsString());
+                    String redirectUri = bridgeHandler.getConfiguration().isSimulator()
+                            ? request.getParameter(PARAM_REDIRECT_URI)
+                            : null;
+                    String authorizationUrl = bridgeHandler.getOAuthClientService().getAuthorizationUrl(redirectUri,
+                            null, bridgeHandler.getThing().getUID().getAsString());
                     logger.debug("Generated authorization url: {}", authorizationUrl);
 
                     response.sendRedirect(authorizationUrl);
@@ -505,8 +495,11 @@ public class HomeConnectServlet extends HttpServlet {
         Optional<HomeConnectBridgeHandler> bridgeHandler = getBridgeHandler(state);
         if (bridgeHandler.isPresent()) {
             try {
+                String redirectUri = bridgeHandler.get().getConfiguration().isSimulator()
+                        ? request.getRequestURL().toString()
+                        : null;
                 AccessTokenResponse accessTokenResponse = bridgeHandler.get().getOAuthClientService()
-                        .getAccessTokenResponseByAuthorizationCode(code, null);
+                        .getAccessTokenResponseByAuthorizationCode(code, redirectUri);
 
                 logger.debug("access token response: {}", accessTokenResponse);
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -26,7 +26,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.insteon.internal.InsteonBinding;
 import org.openhab.binding.insteon.internal.InsteonBindingConstants;
 import org.openhab.binding.insteon.internal.config.InsteonChannelConfiguration;
@@ -125,7 +124,8 @@ public class InsteonDeviceHandler extends BaseThingHandler {
 
     private final Logger logger = LoggerFactory.getLogger(InsteonDeviceHandler.class);
 
-    private @Nullable InsteonDeviceConfiguration config;
+    private @NonNullByDefault({}) InsteonDeviceConfiguration config;
+    private boolean deviceLinked = true;
 
     public InsteonDeviceHandler(Thing thing) {
         super(thing);
@@ -134,9 +134,11 @@ public class InsteonDeviceHandler extends BaseThingHandler {
     @Override
     public void initialize() {
         config = getConfigAs(InsteonDeviceConfiguration.class);
+        deviceLinked = true;
 
         scheduler.execute(() -> {
-            if (getBridge() == null) {
+            final Bridge bridge = getBridge();
+            if (bridge == null) {
                 String msg = "An Insteon network bridge has not been selected for this device.";
                 logger.warn("{} {}", thing.getUID().getAsString(), msg);
 
@@ -250,7 +252,7 @@ public class InsteonDeviceHandler extends BaseThingHandler {
                         feature = DATA;
                     }
                 } else if (productKey.equals(PLM_PRODUCT_KEY)) {
-                    String parts[] = feature.split("#");
+                    String[] parts = feature.split("#");
                     if (parts.length == 2 && parts[0].equalsIgnoreCase(InsteonBindingConstants.BROADCAST_ON_OFF)
                             && parts[1].matches("^\\d+$")) {
                         feature = BROADCAST_ON_OFF;
@@ -280,9 +282,9 @@ public class InsteonDeviceHandler extends BaseThingHandler {
                             Object groups = deviceConfigMap.get(BROADCAST_GROUPS);
                             if (groups != null) {
                                 boolean valid = false;
-                                if (groups instanceof List<?>) {
+                                if (groups instanceof List<?> list) {
                                     valid = true;
-                                    for (Object o : (List<?>) groups) {
+                                    for (Object o : list) {
                                         if (o instanceof Double && (Double) o % 1 == 0) {
                                             String id = InsteonBindingConstants.BROADCAST_ON_OFF + "#"
                                                     + ((Double) o).intValue();
@@ -371,7 +373,13 @@ public class InsteonDeviceHandler extends BaseThingHandler {
                     }
                 });
 
-                updateStatus(ThingStatus.ONLINE);
+                if (ThingStatus.ONLINE == bridge.getStatus()) {
+                    if (deviceLinked) {
+                        updateStatus(ThingStatus.ONLINE);
+                    }
+                } else {
+                    updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
+                }
             } else {
                 String msg = "Product key '" + productKey
                         + "' does not have any features that match existing channels.";
@@ -394,7 +402,15 @@ public class InsteonDeviceHandler extends BaseThingHandler {
                 logger.debug("removed {} address = {}", getThing().getUID().getAsString(), address);
             }
 
-            getInsteonNetworkHandler().disposed(getThing().getUID());
+            InsteonNetworkHandler handler = null;
+            try {
+                handler = getInsteonNetworkHandler();
+            } catch (IllegalArgumentException e) {
+            }
+
+            if (handler != null) {
+                handler.disposed(getThing().getUID());
+            }
         }
 
         super.dispose();
@@ -402,9 +418,14 @@ public class InsteonDeviceHandler extends BaseThingHandler {
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        logger.debug("channel {} was triggered with the command {}", channelUID.getAsString(), command);
+        if (ThingStatus.ONLINE == getThing().getStatus()) {
+            logger.debug("channel {} was triggered with the command {}", channelUID.getAsString(), command);
 
-        getInsteonBinding().sendCommand(channelUID.getAsString(), command);
+            getInsteonBinding().sendCommand(channelUID.getAsString(), command);
+        } else {
+            logger.debug("the command {} for channel {} was ignored because the thing is not ONLINE", command,
+                    channelUID.getAsString());
+        }
     }
 
     @Override
@@ -423,10 +444,10 @@ public class InsteonDeviceHandler extends BaseThingHandler {
         Map<String, Object> channelProperties = channel.getConfiguration().getProperties();
         for (String key : channelProperties.keySet()) {
             Object value = channelProperties.get(key);
-            if (value instanceof String) {
-                params.put(key, (String) value);
-            } else if (value instanceof BigDecimal) {
-                String s = ((BigDecimal) value).toPlainString();
+            if (value instanceof String stringValue) {
+                params.put(key, stringValue);
+            } else if (value instanceof BigDecimal decimalValue) {
+                String s = decimalValue.toPlainString();
                 params.put(key, s);
             } else {
                 logger.warn("not a string or big decimal value key '{}' value '{}' {}", key, value,
@@ -472,7 +493,7 @@ public class InsteonDeviceHandler extends BaseThingHandler {
                 feature = DATA;
             }
         } else if (productKey.equals(PLM_PRODUCT_KEY)) {
-            String parts[] = feature.split("#");
+            String[] parts = feature.split("#");
             if (parts.length == 2 && parts[0].equalsIgnoreCase(InsteonBindingConstants.BROADCAST_ON_OFF)
                     && parts[1].matches("^\\d+$")) {
                 params.put(GROUP, parts[1]);
@@ -513,6 +534,18 @@ public class InsteonDeviceHandler extends BaseThingHandler {
         getInsteonNetworkHandler().unlinked(channelUID);
 
         logger.debug("channel {} unlinked ", channelUID.getAsString());
+    }
+
+    public InsteonAddress getInsteonAddress() {
+        return new InsteonAddress(config.getAddress());
+    }
+
+    public void deviceNotLinked() {
+        String msg = "device with the address '" + config.getAddress()
+                + "' was not found in the modem database. Did you forget to link?";
+        updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, msg);
+
+        deviceLinked = false;
     }
 
     private InsteonNetworkHandler getInsteonNetworkHandler() {

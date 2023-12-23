@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,7 +12,6 @@
  */
 package org.openhab.binding.daikin.internal.handler;
 
-import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -49,7 +48,7 @@ import org.slf4j.LoggerFactory;
  * Base class that handles common tasks with a Daikin air conditioning unit.
  *
  * @author Tim Waterhouse - Initial Contribution
- * @author Paul Smedley <paul@smedley.id.au> - Modifications to support Airbase Controllers
+ * @author Paul Smedley - Modifications to support Airbase Controllers
  * @author Jimmy Tanagra - Split handler classes, support Airside and DynamicStateDescription
  *
  */
@@ -68,7 +67,7 @@ public abstract class DaikinBaseHandler extends BaseThingHandler {
     private boolean uuidRegistrationAttempted = false;
 
     // Abstract methods to be overridden by specific Daikin implementation class
-    protected abstract void pollStatus() throws IOException;
+    protected abstract void pollStatus() throws DaikinCommunicationException;
 
     protected abstract void changePower(boolean power) throws DaikinCommunicationException;
 
@@ -93,14 +92,18 @@ public abstract class DaikinBaseHandler extends BaseThingHandler {
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
+        if (webTargets == null) {
+            logger.warn("webTargets is null. This is possibly a bug.");
+            return;
+        }
         try {
             if (handleCommandInternal(channelUID, command)) {
                 return;
             }
             switch (channelUID.getId()) {
                 case DaikinBindingConstants.CHANNEL_AC_POWER:
-                    if (command instanceof OnOffType) {
-                        changePower(((OnOffType) command).equals(OnOffType.ON));
+                    if (command instanceof OnOffType onOffCommand) {
+                        changePower(onOffCommand.equals(OnOffType.ON));
                         return;
                     }
                     break;
@@ -111,8 +114,8 @@ public abstract class DaikinBaseHandler extends BaseThingHandler {
                     break;
                 case DaikinBindingConstants.CHANNEL_AIRBASE_AC_FAN_SPEED:
                 case DaikinBindingConstants.CHANNEL_AC_FAN_SPEED:
-                    if (command instanceof StringType) {
-                        changeFanSpeed(((StringType) command).toString());
+                    if (command instanceof StringType stringCommand) {
+                        changeFanSpeed(stringCommand.toString());
                         return;
                     }
                     break;
@@ -123,16 +126,16 @@ public abstract class DaikinBaseHandler extends BaseThingHandler {
                     }
                     break;
                 case DaikinBindingConstants.CHANNEL_AC_MODE:
-                    if (command instanceof StringType) {
-                        changeMode(((StringType) command).toString());
+                    if (command instanceof StringType stringCommand) {
+                        changeMode(stringCommand.toString());
                         return;
                     }
                     break;
             }
             logger.debug("Received command ({}) of wrong type for thing '{}' on channel {}", command,
                     thing.getUID().getAsString(), channelUID.getId());
-        } catch (DaikinCommunicationException ex) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, ex.getMessage());
+        } catch (DaikinCommunicationException e) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
         }
     }
 
@@ -148,7 +151,6 @@ public abstract class DaikinBaseHandler extends BaseThingHandler {
             }
             webTargets = new DaikinWebTargets(httpClient, config.host, config.secure, config.uuid);
             refreshInterval = config.refresh;
-
             schedulePoll();
         }
     }
@@ -182,8 +184,11 @@ public abstract class DaikinBaseHandler extends BaseThingHandler {
 
     private synchronized void poll() {
         try {
-            logger.debug("Polling for state");
+            logger.trace("Polling for state");
             pollStatus();
+            if (getThing().getStatus() != ThingStatus.ONLINE) {
+                updateStatus(ThingStatus.ONLINE);
+            }
         } catch (DaikinCommunicationForbiddenException e) {
             if (!uuidRegistrationAttempted && config.key != null && config.uuid != null) {
                 logger.debug("poll: Attempting to register uuid {} with key {}", config.uuid, config.key);
@@ -194,9 +199,7 @@ public abstract class DaikinBaseHandler extends BaseThingHandler {
                         "Access denied. Check uuid/key.");
                 logger.warn("{} access denied by adapter. Check uuid/key.", thing.getUID());
             }
-        } catch (IOException e) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
-        } catch (RuntimeException e) {
+        } catch (DaikinCommunicationException e) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
         }
     }
@@ -211,8 +214,8 @@ public abstract class DaikinBaseHandler extends BaseThingHandler {
      */
     private boolean changeSetPoint(Command command) throws DaikinCommunicationException {
         double newTemperature;
-        if (command instanceof DecimalType) {
-            newTemperature = ((DecimalType) command).doubleValue();
+        if (command instanceof DecimalType decimalCommand) {
+            newTemperature = decimalCommand.doubleValue();
         } else if (command instanceof QuantityType) {
             newTemperature = ((QuantityType<Temperature>) command).toUnit(SIUnits.CELSIUS).doubleValue();
         } else {

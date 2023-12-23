@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -83,10 +83,12 @@ public class HaywardBackyardHandler extends HaywardThingHandler {
             HaywardBridgeHandler bridgehandler = (HaywardBridgeHandler) bridge.getHandler();
             if (bridgehandler != null) {
                 // *****Request Alarm List from Hayward server
-                String urlParameters = "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><Name>GetAlarmList</Name><Parameters>"
-                        + "<Parameter name=\"Token\" dataType=\"String\">" + bridgehandler.account.token
-                        + "</Parameter>" + "<Parameter name=\"MspSystemID\" dataType=\"int\">"
-                        + bridgehandler.account.mspSystemID + "</Parameter>"
+                String urlParameters = """
+                        <?xml version="1.0" encoding="utf-8"?><Request><Name>GetAlarmList</Name><Parameters>\
+                        <Parameter name="Token" dataType="String">\
+                        """ + bridgehandler.account.token + "</Parameter>"
+                        + "<Parameter name=\"MspSystemID\" dataType=\"int\">" + bridgehandler.account.mspSystemID
+                        + "</Parameter>"
                         + "<Parameter name=\"CultureInfoName\" dataType=\"String\">en-us</Parameter></Parameters></Request>";
 
                 try {
@@ -101,7 +103,7 @@ public class HaywardBackyardHandler extends HaywardThingHandler {
                             .evaluateXPath("/Response/Parameters//Parameter[@name='Status']/text()", xmlResponse)
                             .get(0);
 
-                    if (!(status.equals("0"))) {
+                    if (!("0".equals(status))) {
                         logger.trace("Hayward getAlarm XML response: {}", xmlResponse);
                         return false;
                     }

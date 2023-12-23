@@ -4,10 +4,12 @@ Transforms the input by mapping it to another string. It expects the mappings to
 The file name must have the `.map` extension. 
 
 This file should be in property syntax, i.e. simple lines with "key=value" pairs. 
-The file format is documented [here](https://docs.oracle.com/javase/8/docs/api/java/util/Properties.html#load-java.io.Reader-).
+The file format is documented [here](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/Properties.html#load(java.io.Reader)).
 To organize the various transformations one might use subfolders.
 
-A default value can be provided if no matching entry is found by using "=value" syntax
+A default value can be provided if no matching entry is found by using "=value" syntax. 
+Defining this default value using `_source_` would then return the non transformed input string.
+
 
 ## Example
 
@@ -19,15 +21,18 @@ key=value
 0=OFF
 ON=1
 OFF=0
+white\ space=using escape
 =default
 ```
 
-| input      | output    |
-|------------|-----------|
-| `1`        | `ON`      |
-| `OFF`      | `0`       |
-| `key`      | `value`   |
-| `anything` | `default` |
+| input         | output         |
+|---------------|----------------|
+| `1`           | `ON`           |
+| `OFF`         | `0`            |
+| `key`         | `value`        |
+| `white space` | `using escape` |
+| `anything`    | `default`      |
+
 
 ## Usage as a Profile
 

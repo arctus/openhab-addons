@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -166,6 +166,7 @@ public class KaleidescapeBindingConstants {
     public static final String GET_CONTENT_COLOR = "GET_CONTENT_COLOR";
     public static final String SET_STATUS_CUE_PERIOD_1 = "SET_STATUS_CUE_PERIOD:1";
     public static final String GET_TIME = "GET_TIME";
+    public static final String GET_CONTENT_DETAILS = "GET_CONTENT_DETAILS:";
 
     public static final String LEAVE_STANDBY = "LEAVE_STANDBY";
     public static final String ENTER_STANDBY = "ENTER_STANDBY";
@@ -182,6 +183,7 @@ public class KaleidescapeBindingConstants {
     public static final String MUSIC_RANDOM_ON = "MUSIC_RANDOM_ON";
     public static final String MUSIC_RANDOM_OFF = "MUSIC_RANDOM_OFF";
 
+    public static final String SEND_TO_SYSLOG = "SEND_TO_SYSLOG:INFORMATION:";
     public static final String SEND_EVENT_VOLUME_CAPABILITIES_15 = "SEND_EVENT:VOLUME_CAPABILITIES=15";
     public static final String SEND_EVENT_VOLUME_LEVEL_EQ = "SEND_EVENT:VOLUME_LEVEL=";
     public static final String SEND_EVENT_MUTE = "SEND_EVENT:MUTE_";

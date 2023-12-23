@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -14,7 +14,7 @@ package org.openhab.binding.homematic.internal.discovery;
 
 import static org.openhab.binding.homematic.internal.HomematicBindingConstants.BINDING_ID;
 
-import java.util.Collections;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
@@ -52,16 +52,15 @@ public class HomematicDeviceDiscoveryService extends AbstractDiscoveryService
     private Future<?> loadDevicesFuture;
     private volatile boolean isInInstallMode = false;
     private volatile Object installModeSync = new Object();
-    private volatile int installModeDuration = HomematicConfig.DEFAULT_INSTALL_MODE_DURATION;
 
     public HomematicDeviceDiscoveryService() {
-        super(Collections.singleton(new ThingTypeUID(BINDING_ID, "-")), DISCOVER_TIMEOUT_SECONDS, false);
+        super(Set.of(new ThingTypeUID(BINDING_ID, "-")), DISCOVER_TIMEOUT_SECONDS, false);
     }
 
     @Override
     public void setThingHandler(@Nullable ThingHandler handler) {
-        if (handler instanceof HomematicBridgeHandler) {
-            this.bridgeHandler = (HomematicBridgeHandler) handler;
+        if (handler instanceof HomematicBridgeHandler homematicBridgeHandler) {
+            this.bridgeHandler = homematicBridgeHandler;
             this.bridgeHandler.setDiscoveryService(this);
         }
     }
@@ -103,10 +102,9 @@ public class HomematicDeviceDiscoveryService extends AbstractDiscoveryService
             if (bridgeHandler != null) {
                 Thing bridge = bridgeHandler.getThing();
                 bridgeStatus = bridge.getStatus();
-                updateInstallModeDuration(bridge);
             }
             if (ThingStatus.ONLINE == bridgeStatus) {
-                gateway.setInstallMode(true, installModeDuration);
+                gateway.setInstallMode(true, getInstallModeDuration());
 
                 int remaining = gateway.getInstallMode();
                 if (remaining > 0) {
@@ -123,14 +121,16 @@ public class HomematicDeviceDiscoveryService extends AbstractDiscoveryService
         }
     }
 
-    private void updateInstallModeDuration(Thing bridge) {
-        HomematicConfig config = bridge.getConfiguration().as(HomematicConfig.class);
-        installModeDuration = config.getInstallModeDuration();
+    private int getInstallModeDuration() {
+        if (bridgeHandler != null) {
+            return bridgeHandler.getThing().getConfiguration().as(HomematicConfig.class).getInstallModeDuration();
+        }
+        return HomematicConfig.DEFAULT_INSTALL_MODE_DURATION;
     }
 
     @Override
     public int getScanTimeout() {
-        return installModeDuration;
+        return getInstallModeDuration();
     }
 
     @Override

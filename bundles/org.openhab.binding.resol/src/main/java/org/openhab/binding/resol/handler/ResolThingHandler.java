@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -65,9 +65,19 @@ public class ResolThingHandler extends ResolBaseThingHandler {
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat(
             DateTimeType.DATE_PATTERN_WITH_TZ_AND_MS_GENERAL);
 
+    private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm");
+
+    private static final SimpleDateFormat WEEK_FORMAT = new SimpleDateFormat("EEE,HH:mm");
+
     static {
         synchronized (DATE_FORMAT) {
             DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
+        }
+        synchronized (TIME_FORMAT) {
+            TIME_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
+        }
+        synchronized (WEEK_FORMAT) {
+            WEEK_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
         }
     }
 
@@ -103,8 +113,8 @@ public class ResolThingHandler extends ResolBaseThingHandler {
         ResolBridgeHandler bridgeHandler = null;
 
         ThingHandler handler = bridge.getHandler();
-        if (handler instanceof ResolBridgeHandler) {
-            bridgeHandler = (ResolBridgeHandler) handler;
+        if (handler instanceof ResolBridgeHandler resolBridgeHandler) {
+            bridgeHandler = resolBridgeHandler;
         } else {
             logger.debug("No available bridge handler found yet. Bridge: {} .", bridge.getUID());
         }
@@ -134,7 +144,11 @@ public class ResolThingHandler extends ResolBaseThingHandler {
                 channelTypeUID = new ChannelTypeUID(ResolBindingConstants.BINDING_ID,
                         pfv.getPacketFieldSpec().getUnit().getUnitCodeText());
             } else if (pfv.getPacketFieldSpec().getType() == SpecificationFile.Type.DateTime) {
-                channelTypeUID = new ChannelTypeUID(ResolBindingConstants.BINDING_ID, "DateTime");
+                channelTypeUID = new ChannelTypeUID(ResolBindingConstants.BINDING_ID, "datetime");
+            } else if (pfv.getPacketFieldSpec().getType() == SpecificationFile.Type.WeekTime) {
+                channelTypeUID = new ChannelTypeUID(ResolBindingConstants.BINDING_ID, "weektime");
+            } else if (pfv.getPacketFieldSpec().getType() == SpecificationFile.Type.Time) {
+                channelTypeUID = new ChannelTypeUID(ResolBindingConstants.BINDING_ID, "time");
             } else {
                 /* used for enums and the numeric types without unit */
                 channelTypeUID = new ChannelTypeUID(ResolBindingConstants.BINDING_ID, "None");
@@ -147,10 +161,10 @@ public class ResolThingHandler extends ResolBaseThingHandler {
                 case DateTime:
                     acceptedItemType = "DateTime";
                     break;
-                case WeekTime:
                 case Number:
                     acceptedItemType = ResolChannelTypeProvider.itemTypeForUnit(pfv.getPacketFieldSpec().getUnit());
                     break;
+                case WeekTime:
                 case Time:
                 default:
                     acceptedItemType = "String";
@@ -180,9 +194,31 @@ public class ResolThingHandler extends ResolBaseThingHandler {
 
                     thingBuilder.withChannel(channel).withLabel(thing.getLabel());
                     updateThing(thingBuilder.build());
+                } else if ("DateTime".equals(acceptedItemType)) {
+                    /* a date channel */
+                    Channel channel = ChannelBuilder.create(channelUID, acceptedItemType).withType(channelTypeUID)
+                            .withLabel(pfv.getName(lang)).build();
+
+                    thingBuilder.withChannel(channel).withLabel(thing.getLabel());
+                    updateThing(thingBuilder.build());
+
+                } else if ("String".equals(acceptedItemType)) {
+                    /* a string channel */
+                    Channel channel = ChannelBuilder.create(channelUID, "String").withType(channelTypeUID)
+                            .withLabel(pfv.getName(lang)).build();
+
+                    thingBuilder.withChannel(channel).withLabel(thing.getLabel());
+                    updateThing(thingBuilder.build());
                 } else if (pfv.getRawValueDouble() != null) {
                     /* a number channel */
                     Channel channel = ChannelBuilder.create(channelUID, acceptedItemType).withType(channelTypeUID)
+                            .withLabel(pfv.getName(lang)).build();
+
+                    thingBuilder.withChannel(channel).withLabel(thing.getLabel());
+                    updateThing(thingBuilder.build());
+                } else {
+                    /* a string channel */
+                    Channel channel = ChannelBuilder.create(channelUID, "String").withType(channelTypeUID)
                             .withLabel(pfv.getName(lang)).build();
 
                     thingBuilder.withChannel(channel).withLabel(thing.getLabel());
@@ -213,11 +249,12 @@ public class ResolThingHandler extends ResolBaseThingHandler {
                                     this.updateState(channelId, q);
                                 } else {
                                     try {
-                                        QuantityType<?> q = new QuantityType<>(str);
+                                        QuantityType<?> q = new QuantityType<>(str, Locale
+                                                .getDefault()); /* vbus library returns the value in default locale */
                                         this.updateState(channelId, q);
                                     } catch (IllegalArgumentException e) {
                                         logger.debug("unit of '{}' unknown in openHAB", str);
-                                        QuantityType<?> q = new QuantityType<>(dd.toString());
+                                        QuantityType<?> q = new QuantityType<>(dd, Units.ONE);
                                         this.updateState(channelId, q);
                                     }
                                 }
@@ -229,21 +266,36 @@ public class ResolThingHandler extends ResolBaseThingHandler {
                          * }
                          */
                         break;
+                    case Time:
+                        synchronized (TIME_FORMAT) {
+                            this.updateState(channelId, new StringType(TIME_FORMAT.format(pfv.getRawValueDate())));
+                        }
+                        break;
+                    case WeekTime:
+                        synchronized (WEEK_FORMAT) {
+                            this.updateState(channelId, new StringType(WEEK_FORMAT.format(pfv.getRawValueDate())));
+                        }
+                        break;
                     case DateTime:
                         synchronized (DATE_FORMAT) {
                             DateTimeType d = new DateTimeType(DATE_FORMAT.format(pfv.getRawValueDate()));
                             this.updateState(channelId, d);
                         }
                         break;
-                    case WeekTime:
-                    case Time:
                     default:
                         Bridge b = getBridge();
                         if (b != null) {
-                            String value = pfv.formatTextValue(pfv.getPacketFieldSpec().getUnit(),
-                                    ((ResolBridgeHandler) b).getLocale());
+                            ResolBridgeHandler handler = (ResolBridgeHandler) b.getHandler();
+                            String value;
+                            Locale loc;
+                            if (handler != null) {
+                                loc = handler.getLocale();
+                            } else {
+                                loc = Locale.getDefault();
+                            }
+                            value = pfv.formatTextValue(pfv.getPacketFieldSpec().getUnit(), loc);
                             try {
-                                QuantityType<?> q = new QuantityType<>(value);
+                                QuantityType<?> q = new QuantityType<>(value, loc);
                                 this.updateState(channelId, q);
                             } catch (IllegalArgumentException e) {
                                 this.updateState(channelId, new StringType(value));
@@ -256,6 +308,7 @@ public class ResolThingHandler extends ResolBaseThingHandler {
     }
 
     /* check if the given value is a special one like 888.8 or 999.9 for shortcut or open load on a sensor wire */
+    @SuppressWarnings("PMD.SimplifyBooleanReturns")
     private boolean isSpecialValue(Double dd) {
         if ((Math.abs(dd - 888.8) < 0.1) || (Math.abs(dd - (-888.8)) < 0.1)) {
             /* value out of range */

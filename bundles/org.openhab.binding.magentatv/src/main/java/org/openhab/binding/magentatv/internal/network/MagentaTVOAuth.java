@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -15,7 +15,6 @@ package org.openhab.binding.magentatv.internal.network;
 import static org.openhab.binding.magentatv.internal.MagentaTVBindingConstants.*;
 import static org.openhab.binding.magentatv.internal.MagentaTVUtil.*;
 
-import java.io.UnsupportedEncodingException;
 import java.net.HttpCookie;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -121,9 +120,9 @@ public class MagentaTVOAuth {
         if (cred.sam3Para != null) {
             for (OauthKeyValue si : cred.sam3Para) {
                 logger.trace("sam3Para.{} = {}", si.key, si.value);
-                if (si.key.equalsIgnoreCase("oAuthScope")) {
+                if ("oAuthScope".equalsIgnoreCase(si.key)) {
                     oAuthScope = si.value;
-                } else if (si.key.equalsIgnoreCase("SAM3ServiceURL")) {
+                } else if ("SAM3ServiceURL".equalsIgnoreCase(si.key)) {
                     oAuthService = si.value;
                 }
             }
@@ -243,7 +242,7 @@ public class MagentaTVOAuth {
             // validate response, API errors are reported as Json
             HttpFields responseHeaders = contentResponse.getHeaders();
             for (HttpField f : responseHeaders) {
-                if (f.getName().equals("Set-Cookie")) {
+                if ("Set-Cookie".equals(f.getName())) {
                     HttpCookie c = new HttpCookie(f.getName(), f.getValue());
                     cookies.add(c);
                 }
@@ -291,11 +290,6 @@ public class MagentaTVOAuth {
     }
 
     private String urlEncode(String url) {
-        try {
-            return URLEncoder.encode(url, UTF_8);
-        } catch (UnsupportedEncodingException e) {
-            logger.warn("OAuth: Unable to URL encode string {}", url, e);
-            return "";
-        }
+        return URLEncoder.encode(url, StandardCharsets.UTF_8);
     }
 }

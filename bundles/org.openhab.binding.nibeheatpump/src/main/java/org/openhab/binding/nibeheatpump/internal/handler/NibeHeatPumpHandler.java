@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -384,10 +384,10 @@ public class NibeHeatPumpHandler extends BaseThingHandler implements NibeHeatPum
 
         if (command instanceof DecimalType || command instanceof QuantityType || command instanceof StringType) {
             BigDecimal v;
-            if (command instanceof DecimalType) {
-                v = ((DecimalType) command).toBigDecimal();
-            } else if (command instanceof QuantityType) {
-                v = ((QuantityType) command).toBigDecimal();
+            if (command instanceof DecimalType decimalCommand) {
+                v = decimalCommand.toBigDecimal();
+            } else if (command instanceof QuantityType quantityCommand) {
+                v = quantityCommand.toBigDecimal();
             } else {
                 v = new BigDecimal(command.toString());
             }
@@ -498,12 +498,12 @@ public class NibeHeatPumpHandler extends BaseThingHandler implements NibeHeatPum
 
             updateStatus(ThingStatus.ONLINE);
 
-            if (msg instanceof ModbusReadResponseMessage) {
-                handleReadResponseMessage((ModbusReadResponseMessage) msg);
-            } else if (msg instanceof ModbusWriteResponseMessage) {
-                handleWriteResponseMessage((ModbusWriteResponseMessage) msg);
-            } else if (msg instanceof ModbusDataReadOutMessage) {
-                handleDataReadOutMessage((ModbusDataReadOutMessage) msg);
+            if (msg instanceof ModbusReadResponseMessage readResponseMessage) {
+                handleReadResponseMessage(readResponseMessage);
+            } else if (msg instanceof ModbusWriteResponseMessage writeResponseMessage) {
+                handleWriteResponseMessage(writeResponseMessage);
+            } else if (msg instanceof ModbusDataReadOutMessage dataReadOutMessage) {
+                handleDataReadOutMessage(dataReadOutMessage);
             } else {
                 logger.debug("Received unknown message: {}", msg.toString());
             }
@@ -595,7 +595,7 @@ public class NibeHeatPumpHandler extends BaseThingHandler implements NibeHeatPum
                 logger.debug("{}: value did not change, ignoring update", variableInfo.variable);
             } else {
                 final String channelPrefix = (variableInfo.type == Type.SETTING ? "setting#" : "sensor#");
-                final String channelId = channelPrefix + String.valueOf(coilAddress);
+                final String channelId = channelPrefix + coilAddress;
                 final String acceptedItemType = thing.getChannel(channelId).getAcceptedItemType();
 
                 logger.debug("AcceptedItemType for channel {} = {}", channelId, acceptedItemType);

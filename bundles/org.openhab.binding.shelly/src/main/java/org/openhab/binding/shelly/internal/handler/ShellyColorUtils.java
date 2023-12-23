@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,7 +12,7 @@
  */
 package org.openhab.binding.shelly.internal.handler;
 
-import static org.openhab.binding.shelly.internal.api.ShellyApiJsonDTO.*;
+import static org.openhab.binding.shelly.internal.api1.Shelly1ApiJsonDTO.*;
 
 import java.math.BigDecimal;
 
@@ -142,10 +142,10 @@ public class ShellyColorUtils {
     }
 
     public Integer[] fromRGBW(String rgbwString) {
-        Integer values[] = new Integer[4];
+        Integer[] values = new Integer[4];
         values[0] = values[1] = values[2] = values[3] = -1;
         try {
-            String rgbw[] = rgbwString.split(",");
+            String[] rgbw = rgbwString.split(",");
             for (int i = 0; i < rgbw.length; i++) {
                 values[i] = Integer.parseInt(rgbw[i]);
             }

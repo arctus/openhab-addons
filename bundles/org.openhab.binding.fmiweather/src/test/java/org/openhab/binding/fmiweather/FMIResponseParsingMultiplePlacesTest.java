@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -73,7 +73,6 @@ public class FMIResponseParsingMultiplePlacesTest extends AbstractFMIResponsePar
         }
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     public void testLocationsMultiplePlacesObservations() {
         // locations
@@ -82,7 +81,6 @@ public class FMIResponseParsingMultiplePlacesTest extends AbstractFMIResponsePar
                 hasItems(deeplyEqualTo(emasalo), deeplyEqualTo(kilpilahti), deeplyEqualTo(harabacka)));
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     public void testLocationsMultiplePlacesForecasts() {
         // locations
@@ -123,19 +121,20 @@ public class FMIResponseParsingMultiplePlacesTest extends AbstractFMIResponsePar
 
     @Test
     public void testParseForecastsMultipleData() {
+        long start = 1668340800;
         Data temperature = forecastsMultiplePlacesResponse.getData(maarianhamina, "Temperature").get();
-        assertThat(temperature, is(deeplyEqualTo(1553688000, 360, "3.84", "2.62", "2.26", "1.22", "5.47", "5.52",
-                "5.42", "4.78", "8.34", "7.15", null, null, null, null)));
+        assertThat(temperature, is(deeplyEqualTo(start, 360, "9.2", "4.8", "7.4", "5.6", "7.7", "7.9", "7.6", null,
+                null, null, null, null, null, null)));
         Data temperature2 = forecastsMultiplePlacesResponse.getData(pointWithNoName, "Temperature").get();
-        assertThat(temperature2, is(deeplyEqualTo(1553688000, 360, "1.54", "2.91", "2.41", "2.36", "4.22", "5.28",
-                "4.58", "4.0", "4.79", "5.4", null, null, null, null)));
+        assertThat(temperature2, is(deeplyEqualTo(start, 360, "7.6", "7.6", "8.0", "6.2", "7.6", "7.3", "6.1", null,
+                null, null, null, null, null, null)));
 
         Data humidity = forecastsMultiplePlacesResponse.getData(maarianhamina, "Humidity").get();
-        assertThat(humidity, is(deeplyEqualTo(1553688000, 360, "66.57", "87.38", "85.77", "96.3", "75.74", "81.7",
-                "86.78", "87.96", "70.86", "76.35", null, null, null, null)));
+        assertThat(humidity, is(deeplyEqualTo(start, 360, "73.9", "98.0", "92.7", "94.9", "91.4", "92.1", "95.0", null,
+                null, null, null, null, null, null)));
         Data humidity2 = forecastsMultiplePlacesResponse.getData(pointWithNoName, "Humidity").get();
-        assertThat(humidity2, is(deeplyEqualTo(1553688000, 360, "90.18", "86.22", "89.18", "89.43", "77.26", "78.55",
-                "83.36", "85.83", "80.82", "76.92", null, null, null, null)));
+        assertThat(humidity2, is(deeplyEqualTo(start, 360, "84.8", "89.9", "92.4", "99.3", "88.3", "88.7", "93.9", null,
+                null, null, null, null, null, null)));
     }
 
     @Test

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -165,18 +165,13 @@ public abstract class AbstractWeatherHandler extends BaseThingHandler {
         if (data.values.length < 2) {
             throw new IllegalStateException("Excepted at least two data items");
         }
-        if (data.values[0] == null) {
-            return -1;
-        }
-        for (int i = 1; i < data.values.length; i++) {
-            if (data.values[i] == null) {
-                return i - 1;
+        for (int i = data.values.length - 1; i >= 0; i--) {
+            if (data.values[i] != null) {
+                return i;
             }
         }
-        if (data.values[data.values.length - 1] == null) {
-            return -1;
-        }
-        return data.values.length - 1;
+        // if we have reached here, it means that array was full of nulls
+        return -1;
     }
 
     protected static long floorToEvenMinutes(long epochSeconds, int roundMinutes) {
@@ -196,7 +191,6 @@ public abstract class AbstractWeatherHandler extends BaseThingHandler {
      *
      * @param channelUID channel UID
      * @param epochSecond value to update
-     * @param unit unit associated with the value
      */
     protected <T extends Quantity<T>> void updateEpochSecondStateIfLinked(ChannelUID channelUID, long epochSecond) {
         if (isLinked(channelUID)) {

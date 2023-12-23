@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -17,16 +17,14 @@ import static org.openhab.binding.meteoalerte.internal.MeteoAlerteBindingConstan
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
-import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
-import java.util.AbstractMap;
-import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.meteoalerte.internal.MeteoAlertIconProvider;
 import org.openhab.binding.meteoalerte.internal.MeteoAlerteConfiguration;
 import org.openhab.binding.meteoalerte.internal.json.ApiResponse;
 import org.openhab.binding.meteoalerte.internal.json.ResponseFieldDTO.AlertLevel;
@@ -57,27 +55,24 @@ import com.google.gson.Gson;
  */
 @NonNullByDefault
 public class MeteoAlerteHandler extends BaseThingHandler {
-    private static final String URL = "https://public.opendatasoft.com/api/records/1.0/search/?dataset=risques-meteorologiques-copy&"
-            + "facet=etat_vent&facet=etat_pluie_inondation&facet=etat_orage&facet=etat_inondation&facet=etat_neige&facet=etat_canicule&"
-            + "facet=etat_grand_froid&facet=etat_avalanches&refine.nom_dept=%s";
     private static final int TIMEOUT_MS = 30000;
-    private static final String UNKNOWN_COLOR = "b3b3b3";
-    private static final Map<AlertLevel, String> ALERT_COLORS = Map.ofEntries(
-            new AbstractMap.SimpleEntry<AlertLevel, String>(AlertLevel.GREEN, "00ff00"),
-            new AbstractMap.SimpleEntry<AlertLevel, String>(AlertLevel.YELLOW, "ffff00"),
-            new AbstractMap.SimpleEntry<AlertLevel, String>(AlertLevel.ORANGE, "ff6600"),
-            new AbstractMap.SimpleEntry<AlertLevel, String>(AlertLevel.RED, "ff0000"),
-            new AbstractMap.SimpleEntry<AlertLevel, String>(AlertLevel.UNKNOWN, UNKNOWN_COLOR));
+    private static final String URL = """
+            https://public.opendatasoft.com/api/records/1.0/search/?dataset=risques-meteorologiques-copy&\
+            facet=etat_vent&facet=etat_pluie_inondation&facet=etat_orage&facet=etat_inondation&facet=etat_neige&facet=etat_canicule&\
+            facet=etat_grand_froid&facet=etat_avalanches&refine.nom_dept=%s\
+            """;
 
     private final Logger logger = LoggerFactory.getLogger(MeteoAlerteHandler.class);
-    // Time zone provider representing time zone configured in openHAB configuration
+    private final MeteoAlertIconProvider iconProvider;
     private final Gson gson;
-    private @Nullable ScheduledFuture<?> refreshJob;
+
+    private Optional<ScheduledFuture<?>> refreshJob = Optional.empty();
     private String queryUrl = "";
 
-    public MeteoAlerteHandler(Thing thing, Gson gson) {
+    public MeteoAlerteHandler(Thing thing, Gson gson, MeteoAlertIconProvider iconProvider) {
         super(thing);
         this.gson = gson;
+        this.iconProvider = iconProvider;
     }
 
     @Override
@@ -89,18 +84,17 @@ public class MeteoAlerteHandler extends BaseThingHandler {
         logger.debug("config refresh = {}", config.refresh);
 
         updateStatus(ThingStatus.UNKNOWN);
-        queryUrl = String.format(URL, config.department);
-        refreshJob = scheduler.scheduleWithFixedDelay(this::updateAndPublish, 0, config.refresh, TimeUnit.MINUTES);
+        queryUrl = URL.formatted(config.department);
+        refreshJob = Optional
+                .of(scheduler.scheduleWithFixedDelay(this::updateAndPublish, 0, config.refresh, TimeUnit.MINUTES));
     }
 
     @Override
     public void dispose() {
         logger.debug("Disposing the Météo Alerte handler.");
-        ScheduledFuture<?> refreshJob = this.refreshJob;
-        if (refreshJob != null) {
-            refreshJob.cancel(true);
-        }
-        this.refreshJob = null;
+
+        refreshJob.ifPresent(job -> job.cancel(true));
+        refreshJob = Optional.empty();
     }
 
     @Override
@@ -117,15 +111,13 @@ public class MeteoAlerteHandler extends BaseThingHandler {
             }
             String response = HttpUtil.executeUrl("GET", queryUrl, TIMEOUT_MS);
             if (response == null) {
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "empty response");
-                return;
+                throw new IOException("Empty response");
             }
             updateStatus(ThingStatus.ONLINE);
-            ApiResponse apiResponse = gson.fromJson(response, ApiResponse.class);
-            updateChannels(Objects.requireNonNull(apiResponse));
+            updateChannels(Objects.requireNonNull(gson.fromJson(response, ApiResponse.class)));
         } catch (MalformedURLException e) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    String.format("Querying '%s' raised : %s", queryUrl, e.getMessage()));
+                    "Querying '%s' error : %s".formatted(queryUrl, e.getMessage()));
         } catch (IOException e) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
         }
@@ -137,7 +129,7 @@ public class MeteoAlerteHandler extends BaseThingHandler {
      * @param channelId the id identifying the channel to be updated
      */
     private void updateChannels(ApiResponse apiResponse) {
-        apiResponse.getRecords().findFirst().ifPresent((record) -> record.getResponseFieldDTO().ifPresent(fields -> {
+        apiResponse.getRecords().findFirst().ifPresent(record -> record.getResponseFieldDTO().ifPresent(fields -> {
             updateAlert(WIND, fields.getVent());
             updateAlert(RAIN, fields.getPluieInondation());
             updateAlert(STORM, fields.getOrage());
@@ -147,59 +139,38 @@ public class MeteoAlerteHandler extends BaseThingHandler {
             updateAlert(FREEZE, fields.getGrandFroid());
             updateAlert(AVALANCHE, fields.getAvalanches());
             updateAlert(WAVE, fields.getVagueSubmersion());
-            updateState(COMMENT, new StringType(fields.getVigilanceComment()));
+            updateState(COMMENT, StringType.valueOf(fields.getVigilanceComment()));
             fields.getDateInsert().ifPresent(date -> updateDate(OBSERVATION_TIME, date));
             fields.getDatePrevue().ifPresent(date -> updateDate(END_TIME, date));
         }));
     }
 
-    public byte @Nullable [] getResource(String iconPath) {
-        ClassLoader classLoader = MeteoAlerteHandler.class.getClassLoader();
-        if (classLoader != null) {
-            try (InputStream stream = classLoader.getResourceAsStream(iconPath)) {
-                return stream != null ? stream.readAllBytes() : null;
-            } catch (IOException e) {
-                logger.warn("Unable to load ressource '{}' : {}", iconPath, e.getMessage());
-            }
-        }
-        return null;
-    }
-
-    public void updateAlert(String channelId, AlertLevel value) {
-        String channelIcon = channelId + "-icon";
+    private void updateAlert(String channelId, AlertLevel value) {
+        State state = value != AlertLevel.UNKNOWN ? new DecimalType(value.ordinal()) : UnDefType.NULL;
         if (isLinked(channelId)) {
-            updateState(channelId, getAlertLevel(value));
+            updateState(channelId, state);
         }
+
+        String channelIcon = channelId + "-icon";
         if (isLinked(channelIcon)) {
-            State result = UnDefType.UNDEF;
-            byte[] bytes = getResource(String.format("picto/%s.svg", channelId));
-            if (bytes != null) {
-                String resource = new String(bytes, StandardCharsets.UTF_8);
-                resource = resource.replaceAll(UNKNOWN_COLOR, ALERT_COLORS.getOrDefault(value, UNKNOWN_COLOR));
-                result = new RawType(resource.getBytes(StandardCharsets.UTF_8), "image/svg+xml");
+            InputStream icon = iconProvider.getIcon(channelId, state.toString());
+            if (icon != null) {
+                try {
+                    State result = new RawType(icon.readAllBytes(), "image/svg+xml");
+                    updateState(channelIcon, result);
+                } catch (IOException e) {
+                    logger.warn("Error getting icon for channel {} and value {} : {}", channelId, value,
+                            e.getMessage());
+                }
+            } else {
+                logger.warn("Null icon returned for channel {} and state {}", channelIcon, state);
             }
-            updateState(channelIcon, result);
         }
     }
 
-    public void updateDate(String channelId, ZonedDateTime zonedDateTime) {
+    private void updateDate(String channelId, ZonedDateTime zonedDateTime) {
         if (isLinked(channelId)) {
             updateState(channelId, new DateTimeType(zonedDateTime));
-        }
-    }
-
-    public State getAlertLevel(AlertLevel alert) {
-        switch (alert) {
-            case GREEN:
-                return DecimalType.ZERO;
-            case YELLOW:
-                return new DecimalType(1);
-            case ORANGE:
-                return new DecimalType(2);
-            case RED:
-                return new DecimalType(3);
-            default:
-                return UnDefType.UNDEF;
         }
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,6 +12,7 @@
  */
 package org.openhab.binding.ipcamera.internal;
 
+import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -32,8 +33,9 @@ public class IpCameraBindingConstants {
     public static final String AMCREST_HANDLER = "amcrestHandler";
     public static final String COMMON_HANDLER = "commonHandler";
     public static final String INSTAR_HANDLER = "instarHandler";
+    public static final String REOLINK_HANDLER = "reolinkHandler";
 
-    public static enum FFmpegFormat {
+    public enum FFmpegFormat {
         HLS,
         GIF,
         RECORD,
@@ -41,6 +43,11 @@ public class IpCameraBindingConstants {
         MJPEG,
         SNAPSHOT
     }
+
+    public static final BigDecimal BIG_DECIMAL_SCALE_MOTION = new BigDecimal(5000);
+    public static final long HLS_STARTUP_DELAY_MS = 4500;
+    @SuppressWarnings("null")
+    public static final int SERVLET_PORT = Integer.getInteger("org.osgi.service.http.port", 8080);
 
     // List of all Thing Type UIDs
     public static final ThingTypeUID THING_TYPE_GROUP = new ThingTypeUID(BINDING_ID, "group");
@@ -60,10 +67,12 @@ public class IpCameraBindingConstants {
     public static final ThingTypeUID THING_TYPE_DAHUA = new ThingTypeUID(BINDING_ID, DAHUA_THING);
     public static final String DOORBIRD_THING = "doorbird";
     public static final ThingTypeUID THING_TYPE_DOORBIRD = new ThingTypeUID(BINDING_ID, DOORBIRD_THING);
+    public static final String REOLINK_THING = "reolink";
+    public static final ThingTypeUID THING_TYPE_REOLINK = new ThingTypeUID(BINDING_ID, REOLINK_THING);
 
     public static final Set<ThingTypeUID> SUPPORTED_THING_TYPES = new HashSet<ThingTypeUID>(
             Arrays.asList(THING_TYPE_ONVIF, THING_TYPE_GENERIC, THING_TYPE_AMCREST, THING_TYPE_DAHUA, THING_TYPE_INSTAR,
-                    THING_TYPE_FOSCAM, THING_TYPE_DOORBIRD, THING_TYPE_HIKVISION));
+                    THING_TYPE_FOSCAM, THING_TYPE_DOORBIRD, THING_TYPE_HIKVISION, THING_TYPE_REOLINK));
 
     public static final Set<ThingTypeUID> GROUP_SUPPORTED_THING_TYPES = new HashSet<ThingTypeUID>(
             Arrays.asList(THING_TYPE_GROUP));
@@ -126,9 +135,13 @@ public class IpCameraBindingConstants {
     public static final String CHANNEL_EXTERNAL_LIGHT = "externalLight";
     public static final String CHANNEL_DOORBELL = "doorBell";
     public static final String CHANNEL_LAST_MOTION_TYPE = "lastMotionType";
+    public static final String CHANNEL_LAST_EVENT_DATA = "lastEventData";
     public static final String CHANNEL_GOTO_PRESET = "gotoPreset";
     public static final String CHANNEL_START_STREAM = "startStream";
     public static final String CHANNEL_ENABLE_PRIVACY_MODE = "enablePrivacyMode";
     public static final String CHANNEL_CAR_ALARM = "carAlarm";
     public static final String CHANNEL_HUMAN_ALARM = "humanAlarm";
+    public static final String CHANNEL_ANIMAL_ALARM = "animalAlarm";
+    public static final String CHANNEL_ENABLE_FTP = "enableFTP";
+    public static final String CHANNEL_ENABLE_RECORDINGS = "enableRecordings";
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -14,6 +14,7 @@ package org.openhab.binding.mqtt.homie.internal.homie300;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Collectors;
@@ -78,8 +79,8 @@ public class Node implements AbstractMqttAttributeClass.AttributeChanged {
 
     /**
      * Parse node properties. This will not subscribe to properties though. Call
-     * {@link Device#startChannels(MqttBrokerConnection)} as soon as the returned future has
-     * completed.
+     * {@link Device#startChannels(MqttBrokerConnection, ScheduledExecutorService, int, HomieThingHandler)}
+     * as soon as the returned future has completed.
      */
     public CompletableFuture<@Nullable Void> subscribe(MqttBrokerConnection connection,
             ScheduledExecutorService scheduler, int timeout) {
@@ -105,7 +106,6 @@ public class Node implements AbstractMqttAttributeClass.AttributeChanged {
     /**
      * Unsubscribe from node attribute and also all property attributes and the property value
      *
-     * @param connection A broker connection
      * @return Returns a future that completes as soon as all unsubscriptions have been performed.
      */
     public CompletableFuture<@Nullable Void> stop() {
@@ -155,7 +155,7 @@ public class Node implements AbstractMqttAttributeClass.AttributeChanged {
     /**
      * <p>
      * The properties of a node are determined by the node attribute "$properties". If that attribute changes,
-     * {@link #attributeChanged(CompletableFuture, String, Object, MqttBrokerConnection, ScheduledExecutorService)} is
+     * {@link #attributeChanged(String, Object, MqttBrokerConnection, ScheduledExecutorServic, boolean)} is
      * called. The {@link #properties} map will be synchronized and this method will be called for every removed
      * property.
      * </p>
@@ -173,8 +173,9 @@ public class Node implements AbstractMqttAttributeClass.AttributeChanged {
 
     protected CompletableFuture<@Nullable Void> applyProperties(MqttBrokerConnection connection,
             ScheduledExecutorService scheduler, int timeout) {
-        return properties.apply(attributes.properties, prop -> prop.subscribe(connection, scheduler, timeout),
-                this::createProperty, this::notifyPropertyRemoved).exceptionally(e -> {
+        return properties.apply(Objects.requireNonNull(attributes.properties),
+                prop -> prop.subscribe(connection, scheduler, timeout), this::createProperty,
+                this::notifyPropertyRemoved).exceptionally(e -> {
                     logger.warn("Could not subscribe", e);
                     return null;
                 });
@@ -189,10 +190,8 @@ public class Node implements AbstractMqttAttributeClass.AttributeChanged {
         // Special case: Not all fields were known before
         if (!attributes.isComplete()) {
             attributesReceived(connection, scheduler, 500);
-        } else {
-            if ("properties".equals(name)) {
-                applyProperties(connection, scheduler, 500);
-            }
+        } else if ("properties".equals(name)) {
+            applyProperties(connection, scheduler, 500);
         }
         callback.nodeAddedOrChanged(this);
     }
@@ -208,15 +207,12 @@ public class Node implements AbstractMqttAttributeClass.AttributeChanged {
      * @return Returns a list of relative topics
      */
     public List<String> getRetainedTopics() {
-        List<String> topics = new ArrayList<>();
+        List<String> topics = new ArrayList<>(Stream.of(this.attributes.getClass().getDeclaredFields())
+                .map(f -> String.format("%s/$%s", this.nodeID, f.getName())).collect(Collectors.toList()));
 
-        topics.addAll(Stream.of(this.attributes.getClass().getDeclaredFields()).map(f -> {
-            return String.format("%s/$%s", this.nodeID, f.getName());
-        }).collect(Collectors.toList()));
-
-        this.properties.stream().map(p -> p.getRetainedTopics().stream().map(a -> {
-            return String.format("%s/%s", this.nodeID, a);
-        }).collect(Collectors.toList())).collect(Collectors.toList()).forEach(topics::addAll);
+        this.properties.stream().map(p -> p.getRetainedTopics().stream()
+                .map(a -> String.format("%s/%s", this.nodeID, a)).collect(Collectors.toList()))
+                .collect(Collectors.toList()).forEach(topics::addAll);
 
         return topics;
     }

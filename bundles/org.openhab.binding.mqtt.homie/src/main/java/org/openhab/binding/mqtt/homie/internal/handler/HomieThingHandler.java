@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -98,8 +98,8 @@ public class HomieThingHandler extends AbstractMQTTThingHandler implements Devic
 
     @Override
     public void initialize() {
-        logger.debug("About to initialize Homie device {}", device.attributes.name);
         config = getConfigAs(HandlerConfiguration.class);
+        logger.debug("About to initialize Homie device {}", config.deviceid);
         if (config.deviceid.isEmpty()) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Object ID unknown");
             return;
@@ -119,23 +119,23 @@ public class HomieThingHandler extends AbstractMQTTThingHandler implements Devic
 
     @Override
     protected CompletableFuture<@Nullable Void> start(MqttBrokerConnection connection) {
-        logger.debug("About to start Homie device {}", device.attributes.name);
+        logger.debug("About to start Homie device {}", config.deviceid);
         if (connection.getQos() != 1) {
             // QoS 1 is required.
             logger.warn(
                     "Homie devices require QoS 1 but Qos 0/2 is configured. Using override. Please check the configuration");
             connection.setQos(1);
         }
-        return device.subscribe(connection, scheduler, attributeReceiveTimeout).thenCompose((Void v) -> {
-            return device.startChannels(connection, scheduler, attributeReceiveTimeout, this);
-        }).thenRun(() -> {
-            logger.debug("Homie device {} fully attached (start)", device.attributes.name);
-        });
+        return device.subscribe(connection, scheduler, attributeReceiveTimeout)
+                .thenCompose((Void v) -> device.startChannels(connection, scheduler, attributeReceiveTimeout, this))
+                .thenRun(() -> {
+                    logger.debug("Homie device {} fully attached (start)", config.deviceid);
+                });
     }
 
     @Override
     protected void stop() {
-        logger.debug("About to stop Homie device {}", device.attributes.name);
+        logger.debug("About to stop Homie device {}", config.deviceid);
         final ScheduledFuture<?> heartBeatTimer = this.heartBeatTimer;
         if (heartBeatTimer != null) {
             heartBeatTimer.cancel(false);
@@ -227,7 +227,7 @@ public class HomieThingHandler extends AbstractMQTTThingHandler implements Devic
         final MqttBrokerConnection connection = this.connection;
         if (connection != null) {
             device.startChannels(connection, scheduler, attributeReceiveTimeout, this).thenRun(() -> {
-                logger.debug("Homie device {} fully attached (accept)", device.attributes.name);
+                logger.debug("Homie device {} fully attached (accept)", config.deviceid);
             });
         }
     }
@@ -241,9 +241,8 @@ public class HomieThingHandler extends AbstractMQTTThingHandler implements Devic
             logger.warn("couldn't remove retained topics for {} because connection is null", thing.getUID());
             return;
         }
-        device.getRetainedTopics().stream().map(d -> {
-            return String.format("%s/%s", config.basetopic, d);
-        }).collect(Collectors.toList()).forEach(t -> connection.publish(t, new byte[0], 1, true));
+        device.getRetainedTopics().stream().map(d -> String.format("%s/%s", config.basetopic, d))
+                .collect(Collectors.toList()).forEach(t -> connection.publish(t, new byte[0], 1, true));
     }
 
     @Override

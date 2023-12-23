@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -18,7 +18,6 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -26,12 +25,10 @@ import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.touchwand.internal.TouchWandBridgeHandler;
-import org.openhab.binding.touchwand.internal.TouchWandUnitStatusUpdateListener;
 import org.openhab.binding.touchwand.internal.dto.TouchWandUnitData;
 import org.openhab.binding.touchwand.internal.dto.TouchWandUnitFromJson;
 import org.openhab.core.config.discovery.AbstractDiscoveryService;
 import org.openhab.core.config.discovery.DiscoveryResultBuilder;
-import org.openhab.core.config.discovery.DiscoveryService;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.ThingUID;
@@ -51,18 +48,17 @@ import com.google.gson.JsonSyntaxException;
  * @author Roie Geron - Initial contribution
  */
 @NonNullByDefault
-public class TouchWandUnitDiscoveryService extends AbstractDiscoveryService
-        implements DiscoveryService, ThingHandlerService {
+public class TouchWandUnitDiscoveryService extends AbstractDiscoveryService implements ThingHandlerService {
 
     private static final int SEARCH_TIME_SEC = 10;
     private static final int SCAN_INTERVAL_SEC = 60;
     private static final int LINK_DISCOVERY_SERVICE_INITIAL_DELAY_SEC = 5;
-    private static final String[] CONNECTIVITY_OPTIONS = { CONNECTIVITY_KNX, CONNECTIVITY_ZWAVE };
+    private static final String[] CONNECTIVITY_OPTIONS = { CONNECTIVITY_KNX, CONNECTIVITY_ZWAVE, CONNECTIVITY_RISCO,
+            CONNECTIVITY_PIMA, CONNECTIVITY_ACWAND };
     private @NonNullByDefault({}) TouchWandBridgeHandler touchWandBridgeHandler;
     private final Logger logger = LoggerFactory.getLogger(TouchWandUnitDiscoveryService.class);
 
     private @Nullable ScheduledFuture<?> scanningJob;
-    private CopyOnWriteArraySet<TouchWandUnitStatusUpdateListener> listeners = new CopyOnWriteArraySet<>();
 
     public TouchWandUnitDiscoveryService() {
         super(SUPPORTED_THING_TYPES_UIDS, SEARCH_TIME_SEC, true);
@@ -115,23 +111,22 @@ public class TouchWandUnitDiscoveryService extends AbstractDiscoveryService
                             case TYPE_ALARMSENSOR:
                                 addDeviceDiscoveryResult(touchWandUnit, THING_TYPE_ALARMSENSOR);
                                 break;
+                            case TYPE_BSENSOR:
+                                addDeviceDiscoveryResult(touchWandUnit, THING_TYPE_BSENSOR);
+                                break;
+                            case TYPE_THERMOSTAT:
+                                addDeviceDiscoveryResult(touchWandUnit, THING_TYPE_THERMOSTAT);
+                                break;
                             default:
                                 continue;
                         }
-                        notifyListeners(touchWandUnit);
                     }
                 } catch (JsonSyntaxException e) {
                     logger.warn("Could not parse unit {}", e.getMessage());
                 }
             }
         } catch (JsonSyntaxException msg) {
-            logger.warn("Could not parse list units response {}", msg.getMessage());
-        }
-    }
-
-    private void notifyListeners(TouchWandUnitData touchWandUnit) {
-        for (TouchWandUnitStatusUpdateListener listener : listeners) {
-            listener.onDataReceived(touchWandUnit);
+            logger.warn("Could not parse list units response error:{} ", msg.getMessage());
         }
     }
 
@@ -171,18 +166,6 @@ public class TouchWandUnitDiscoveryService extends AbstractDiscoveryService
         }
     }
 
-    public void registerListener(TouchWandUnitStatusUpdateListener listener) {
-        if (!listeners.contains(listener)) {
-            logger.debug("Adding TouchWandWebSocket listener {}", listener);
-            listeners.add(listener);
-        }
-    }
-
-    public void unregisterListener(TouchWandUnitStatusUpdateListener listener) {
-        logger.debug("Removing TouchWandWebSocket listener {}", listener);
-        listeners.remove(listener);
-    }
-
     @Override
     public int getScanTimeout() {
         return SEARCH_TIME_SEC;
@@ -208,9 +191,8 @@ public class TouchWandUnitDiscoveryService extends AbstractDiscoveryService
 
     @Override
     public void setThingHandler(@NonNullByDefault({}) ThingHandler handler) {
-        if (handler instanceof TouchWandBridgeHandler) {
-            touchWandBridgeHandler = (TouchWandBridgeHandler) handler;
-            registerListener(touchWandBridgeHandler);
+        if (handler instanceof TouchWandBridgeHandler touchWandBridgeHandler) {
+            this.touchWandBridgeHandler = touchWandBridgeHandler;
         }
     }
 

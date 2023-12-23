@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -14,7 +14,6 @@ package org.openhab.binding.omnilink.internal.handler;
 
 import static org.openhab.binding.omnilink.internal.OmnilinkBindingConstants.*;
 
-import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -51,7 +50,7 @@ import com.digitaldan.jomnilinkII.OmniUnknownMessageTypeException;
 @NonNullByDefault
 public class AudioSourceHandler extends AbstractOmnilinkHandler {
     private final Logger logger = LoggerFactory.getLogger(AudioSourceHandler.class);
-    private final int POLL_DELAY_SECONDS = 5;
+    private final int pollDelaySeconds = 5;
     private final int thingID = getThingNumber();
     private @Nullable ScheduledFuture<?> scheduledPolling = null;
     public @Nullable String number;
@@ -65,7 +64,7 @@ public class AudioSourceHandler extends AbstractOmnilinkHandler {
         final OmnilinkBridgeHandler bridgeHandler = getOmnilinkBridgeHandler();
         if (bridgeHandler != null) {
             updateStatus(ThingStatus.ONLINE);
-            if (((Boolean) getThing().getConfiguration().get(THING_PROPERTIES_AUTO_START)).booleanValue()) {
+            if (((Boolean) getThing().getConfiguration().get(THING_PROPERTIES_AUTOSTART)).booleanValue()) {
                 logger.debug("Autostart enabled, scheduling polling for Audio Source: {}", thingID);
                 schedulePolling();
             } else {
@@ -84,9 +83,7 @@ public class AudioSourceHandler extends AbstractOmnilinkHandler {
                 .builder(bridgeHandler, ObjectPropertyRequests.AUDIO_SOURCE, thingID, 0).selectNamed().build();
 
         for (AudioSourceProperties audioSourceProperties : objectPropertyRequest) {
-            Map<String, String> properties = editProperties();
-            properties.put(THING_PROPERTIES_NAME, audioSourceProperties.getName());
-            updateProperties(properties);
+            updateProperty(THING_PROPERTIES_NAME, audioSourceProperties.getName());
         }
     }
 
@@ -107,7 +104,7 @@ public class AudioSourceHandler extends AbstractOmnilinkHandler {
     private synchronized void schedulePolling() {
         cancelPolling();
         logger.debug("Scheduling polling for Audio Source: {}", thingID);
-        scheduledPolling = super.scheduler.scheduleWithFixedDelay(this::pollAudioSource, 0, POLL_DELAY_SECONDS,
+        scheduledPolling = super.scheduler.scheduleWithFixedDelay(this::pollAudioSource, 0, pollDelaySeconds,
                 TimeUnit.SECONDS);
     }
 
@@ -121,8 +118,8 @@ public class AudioSourceHandler extends AbstractOmnilinkHandler {
                 if (command instanceof RefreshType) {
                     updateState(CHANNEL_AUDIO_SOURCE_POLLING,
                             OnOffType.from((scheduledPolling != null && !scheduledPolling.isDone())));
-                } else if (command instanceof OnOffType) {
-                    handlePolling(channelUID, (OnOffType) command);
+                } else if (command instanceof OnOffType onOffCommand) {
+                    handlePolling(channelUID, onOffCommand);
                 } else {
                     logger.debug("Invalid command: {}, must be RefreshType or OnOffType", command);
                 }

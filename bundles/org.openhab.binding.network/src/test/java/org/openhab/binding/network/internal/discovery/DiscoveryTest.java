@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -17,7 +17,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-import java.util.Collections;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,7 +38,7 @@ import org.openhab.core.config.discovery.DiscoveryResult;
  * @author David Graeff - Initial contribution
  */
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.WARN)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class DiscoveryTest {
     private final String ip = "127.0.0.1";
 
@@ -80,7 +80,7 @@ public class DiscoveryTest {
         // TCP device
         when(value.isPingReachable()).thenReturn(false);
         when(value.isTCPServiceReachable()).thenReturn(true);
-        when(value.getReachableTCPports()).thenReturn(Collections.singletonList(1010));
+        when(value.getReachableTCPports()).thenReturn(List.of(1010));
         d.partialDetectionResult(value);
         verify(listener).thingDiscovered(any(), result.capture());
         DiscoveryResult dresult = result.getValue();

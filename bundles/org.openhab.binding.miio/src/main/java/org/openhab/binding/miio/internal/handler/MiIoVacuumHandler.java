@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -18,12 +18,14 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
-import java.util.Date;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,16 +43,22 @@ import org.openhab.binding.miio.internal.MiIoSendCommand;
 import org.openhab.binding.miio.internal.basic.MiIoDatabaseWatchService;
 import org.openhab.binding.miio.internal.cloud.CloudConnector;
 import org.openhab.binding.miio.internal.cloud.CloudUtil;
+import org.openhab.binding.miio.internal.cloud.HomeRoomDTO;
 import org.openhab.binding.miio.internal.cloud.MiCloudException;
 import org.openhab.binding.miio.internal.robot.ConsumablesType;
+import org.openhab.binding.miio.internal.robot.DockStatusType;
 import org.openhab.binding.miio.internal.robot.FanModeType;
+import org.openhab.binding.miio.internal.robot.HistoryRecordDTO;
 import org.openhab.binding.miio.internal.robot.RRMapDraw;
+import org.openhab.binding.miio.internal.robot.RRMapDrawOptions;
 import org.openhab.binding.miio.internal.robot.RobotCababilities;
 import org.openhab.binding.miio.internal.robot.StatusDTO;
 import org.openhab.binding.miio.internal.robot.StatusType;
 import org.openhab.binding.miio.internal.robot.VacuumErrorType;
 import org.openhab.binding.miio.internal.transport.MiIoAsyncCommunication;
 import org.openhab.core.cache.ExpiringCache;
+import org.openhab.core.i18n.LocaleProvider;
+import org.openhab.core.i18n.TranslationProvider;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
@@ -77,6 +85,7 @@ import org.slf4j.LoggerFactory;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 /**
@@ -88,16 +97,16 @@ import com.google.gson.JsonObject;
 @NonNullByDefault
 public class MiIoVacuumHandler extends MiIoAbstractHandler {
     private final Logger logger = LoggerFactory.getLogger(MiIoVacuumHandler.class);
-    private static final float MAP_SCALE = 2.0f;
-    private static final SimpleDateFormat DATEFORMATTER = new SimpleDateFormat("yyyyMMdd-HHmmss");
+    private static final DateTimeFormatter DATEFORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final Gson GSON = new GsonBuilder().serializeNulls().create();
     private final ChannelUID mapChannelUid;
 
-    private static final Set<RobotCababilities> FEATURES_CHANNELS = Collections.unmodifiableSet(Stream
-            .of(RobotCababilities.SEGMENT_STATUS, RobotCababilities.MAP_STATUS, RobotCababilities.LED_STATUS,
-                    RobotCababilities.CARPET_MODE, RobotCababilities.FW_FEATURES, RobotCababilities.ROOM_MAPPING,
-                    RobotCababilities.MULTI_MAP_LIST, RobotCababilities.CUSTOMIZE_CLEAN_MODE)
-            .collect(Collectors.toSet()));
+    private static final Set<RobotCababilities> FEATURES_CHANNELS = Collections.unmodifiableSet(Stream.of(
+            RobotCababilities.SEGMENT_STATUS, RobotCababilities.MAP_STATUS, RobotCababilities.LED_STATUS,
+            RobotCababilities.CARPET_MODE, RobotCababilities.FW_FEATURES, RobotCababilities.ROOM_MAPPING,
+            RobotCababilities.MULTI_MAP_LIST, RobotCababilities.CUSTOMIZE_CLEAN_MODE, RobotCababilities.COLLECT_DUST,
+            RobotCababilities.CLEAN_MOP_START, RobotCababilities.CLEAN_MOP_STOP, RobotCababilities.MOP_DRYING,
+            RobotCababilities.MOP_DRYING_REMAINING_TIME, RobotCababilities.DOCK_STATE_ID).collect(Collectors.toSet()));
 
     private ExpiringCache<String> status;
     private ExpiringCache<String> consumables;
@@ -110,10 +119,12 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
     private boolean hasChannelStructure;
     private ConcurrentHashMap<RobotCababilities, Boolean> deviceCapabilities = new ConcurrentHashMap<>();
     private ChannelTypeRegistry channelTypeRegistry;
+    private RRMapDrawOptions mapDrawOptions = new RRMapDrawOptions();
 
     public MiIoVacuumHandler(Thing thing, MiIoDatabaseWatchService miIoDatabaseWatchService,
-            CloudConnector cloudConnector, ChannelTypeRegistry channelTypeRegistry) {
-        super(thing, miIoDatabaseWatchService, cloudConnector);
+            CloudConnector cloudConnector, ChannelTypeRegistry channelTypeRegistry, TranslationProvider i18nProvider,
+            LocaleProvider localeProvider) {
+        super(thing, miIoDatabaseWatchService, cloudConnector, i18nProvider, localeProvider);
         this.channelTypeRegistry = channelTypeRegistry;
         mapChannelUid = new ChannelUID(thing.getUID(), CHANNEL_VACUUM_MAP);
         status = new ExpiringCache<>(CACHE_EXPIRY, () -> {
@@ -171,7 +182,6 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
             }
             return null;
         });
-        updateState(RobotCababilities.SEGMENT_CLEAN.getChannel(), new StringType("-"));
     }
 
     @Override
@@ -190,6 +200,7 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
             return;
         }
         if (handleCommandsChannels(channelUID, command)) {
+            forceStatusUpdate();
             return;
         }
         if (channelUID.getId().equals(CHANNEL_VACUUM)) {
@@ -209,13 +220,13 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
             }
         }
         if (channelUID.getId().equals(CHANNEL_CONTROL)) {
-            if (command.toString().equals("vacuum")) {
+            if ("vacuum".equals(command.toString())) {
                 sendCommand(MiIoCommand.START_VACUUM);
-            } else if (command.toString().equals("spot")) {
+            } else if ("spot".equals(command.toString())) {
                 sendCommand(MiIoCommand.START_SPOT);
-            } else if (command.toString().equals("pause")) {
+            } else if ("pause".equals(command.toString())) {
                 sendCommand(MiIoCommand.PAUSE);
-            } else if (command.toString().equals("dock")) {
+            } else if ("dock".equals(command.toString())) {
                 sendCommand(MiIoCommand.STOP_VACUUM);
                 miIoScheduler.schedule(() -> {
                     sendCommand(MiIoCommand.CHARGE);
@@ -233,6 +244,7 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
             forceStatusUpdate();
             return;
         }
+
         if (channelUID.getId().equals(RobotCababilities.WATERBOX_MODE.getChannel())) {
             sendCommand(MiIoCommand.SET_WATERBOX_MODE, "[" + command.toString() + "]");
             forceStatusUpdate();
@@ -256,6 +268,26 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
             sendCommand(MiIoCommand.CONSUMABLES_RESET, "[" + command.toString() + "]");
             updateState(CHANNEL_CONSUMABLE_RESET, new StringType("none"));
         }
+
+        if (channelUID.getId().equals(RobotCababilities.COLLECT_DUST.getChannel()) && !command.toString().isEmpty()
+                && !command.toString().contentEquals("-")) {
+            sendCommand(MiIoCommand.SET_COLLECT_DUST);
+            forceStatusUpdate();
+            return;
+        }
+
+        if (channelUID.getId().equals(RobotCababilities.CLEAN_MOP_START.getChannel()) && !command.toString().isEmpty()
+                && !command.toString().contentEquals("-")) {
+            sendCommand(MiIoCommand.SET_CLEAN_MOP_START);
+            forceStatusUpdate();
+            return;
+        }
+        if (channelUID.getId().equals(RobotCababilities.CLEAN_MOP_STOP.getChannel()) && !command.toString().isEmpty()
+                && !command.toString().contentEquals("-")) {
+            sendCommand(MiIoCommand.SET_CLEAN_MOP_STOP);
+            forceStatusUpdate();
+            return;
+        }
     }
 
     private void forceStatusUpdate() {
@@ -275,6 +307,9 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
 
     private boolean updateVacuumStatus(JsonObject statusData) {
         StatusDTO statusInfo = GSON.fromJson(statusData, StatusDTO.class);
+        if (statusInfo == null) {
+            return false;
+        }
         safeUpdateState(CHANNEL_BATTERY, statusInfo.getBattery());
         if (statusInfo.getCleanArea() != null) {
             updateState(CHANNEL_CLEAN_AREA,
@@ -340,6 +375,11 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
             }
             updateState(CHANNEL_VACUUM, vacuum);
         }
+        if (this.deviceCapabilities.containsKey(RobotCababilities.DOCK_STATE_ID)) {
+            DockStatusType state = DockStatusType.getType(statusInfo.getDockErrorStatus().intValue());
+            updateState(CHANNEL_DOCK_STATE, new StringType(state.getDescription()));
+            updateState(CHANNEL_DOCK_STATE_ID, new DecimalType(state.getId()));
+        }
         if (deviceCapabilities.containsKey(RobotCababilities.WATERBOX_MODE)) {
             safeUpdateState(RobotCababilities.WATERBOX_MODE.getChannel(), statusInfo.getWaterBoxMode());
         }
@@ -357,6 +397,22 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
         }
         if (deviceCapabilities.containsKey(RobotCababilities.LOCATING)) {
             safeUpdateState(RobotCababilities.LOCATING.getChannel(), statusInfo.getIsLocating());
+        }
+        if (deviceCapabilities.containsKey(RobotCababilities.CLEAN_MOP_START)) {
+            safeUpdateState(RobotCababilities.CLEAN_MOP_START.getChannel(), 0);
+        }
+        if (deviceCapabilities.containsKey(RobotCababilities.CLEAN_MOP_STOP)) {
+            safeUpdateState(RobotCababilities.CLEAN_MOP_STOP.getChannel(), 0);
+        }
+        if (deviceCapabilities.containsKey(RobotCababilities.COLLECT_DUST)) {
+            safeUpdateState(RobotCababilities.COLLECT_DUST.getChannel(), 0);
+        }
+        if (deviceCapabilities.containsKey(RobotCababilities.MOP_DRYING)) {
+            safeUpdateState(RobotCababilities.MOP_DRYING.getChannel(), statusInfo.getIsMopDryingActive());
+        }
+        if (deviceCapabilities.containsKey(RobotCababilities.MOP_DRYING_REMAINING_TIME)) {
+            updateState(CHANNEL_MOP_TOTALDRYTIME,
+                    new QuantityType<>(TimeUnit.SECONDS.toMinutes(statusInfo.getMopDryTime()), Units.MINUTE));
         }
         return true;
     }
@@ -395,7 +451,7 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
         return true;
     }
 
-    private boolean updateHistory(JsonArray historyData) {
+    private boolean updateHistoryLegacy(JsonArray historyData) {
         logger.trace("Cleaning history data: {}", historyData.toString());
         updateState(CHANNEL_HISTORY_TOTALTIME,
                 new QuantityType<>(TimeUnit.SECONDS.toMinutes(historyData.get(0).getAsLong()), Units.MINUTE));
@@ -412,29 +468,137 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
         return true;
     }
 
-    private void updateHistoryRecord(JsonArray historyData) {
-        ZonedDateTime startTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(historyData.get(0).getAsLong()),
-                ZoneId.systemDefault());
-        ZonedDateTime endTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(historyData.get(1).getAsLong()),
-                ZoneId.systemDefault());
-        long duration = TimeUnit.SECONDS.toMinutes(historyData.get(2).getAsLong());
-        double area = historyData.get(3).getAsDouble() / 1000000D;
-        int error = historyData.get(4).getAsInt();
-        int finished = historyData.get(5).getAsInt();
-        JsonObject historyRecord = new JsonObject();
-        historyRecord.addProperty("start", startTime.toString());
-        historyRecord.addProperty("end", endTime.toString());
-        historyRecord.addProperty("duration", duration);
-        historyRecord.addProperty("area", area);
-        historyRecord.addProperty("error", error);
-        historyRecord.addProperty("finished", finished);
-        updateState(CHANNEL_HISTORY_START_TIME, new DateTimeType(startTime));
-        updateState(CHANNEL_HISTORY_END_TIME, new DateTimeType(endTime));
-        updateState(CHANNEL_HISTORY_DURATION, new QuantityType<>(duration, Units.MINUTE));
-        updateState(CHANNEL_HISTORY_AREA, new QuantityType<>(area, SIUnits.SQUARE_METRE));
-        updateState(CHANNEL_HISTORY_ERROR, new DecimalType(error));
-        updateState(CHANNEL_HISTORY_FINISH, new DecimalType(finished));
+    private boolean updateHistory(JsonObject historyData) {
+        logger.trace("Cleaning history data: {}", historyData);
+        if (historyData.has("clean_time")) {
+            updateState(CHANNEL_HISTORY_TOTALTIME, new QuantityType<>(
+                    TimeUnit.SECONDS.toMinutes(historyData.get("clean_time").getAsLong()), Units.MINUTE));
+        }
+        if (historyData.has("clean_area")) {
+            updateState(CHANNEL_HISTORY_TOTALAREA,
+                    new QuantityType<>(historyData.get("clean_area").getAsDouble() / 1000000D, SIUnits.SQUARE_METRE));
+        }
+        if (historyData.has("clean_count")) {
+            updateState(CHANNEL_HISTORY_COUNT, new DecimalType(historyData.get("clean_count").getAsLong()));
+        }
+        if (historyData.has("records") & historyData.get("records").isJsonArray()) {
+            JsonArray historyRecords = historyData.get("records").getAsJsonArray();
+            if (!historyRecords.isEmpty()) {
+                String lastClean = historyRecords.get(0).getAsString();
+                if (!lastClean.equals(lastHistoryId)) {
+                    lastHistoryId = lastClean;
+                    sendCommand(MiIoCommand.CLEAN_RECORD_GET, "[" + lastClean + "]");
+                }
+            }
+        }
+        return true;
+    }
+
+    private void updateHistoryRecordLegacy(JsonArray historyData) {
+        HistoryRecordDTO historyRecord = new HistoryRecordDTO();
+        for (int i = 0; i < historyData.size(); ++i) {
+            try {
+                BigInteger value = historyData.get(i).getAsBigInteger();
+                switch (i) {
+                    case 0:
+                        historyRecord.setStart(ZonedDateTime
+                                .ofInstant(Instant.ofEpochSecond(value.longValue()), ZoneId.systemDefault())
+                                .toString());
+                        break;
+                    case 1:
+                        historyRecord.setStart(ZonedDateTime
+                                .ofInstant(Instant.ofEpochSecond(value.longValue()), ZoneId.systemDefault())
+                                .toString());
+                        break;
+                    case 2:
+                        historyRecord.setDuration(value.intValue());
+                        break;
+                    case 3:
+                        historyRecord.setArea(new BigDecimal(value).divide(BigDecimal.valueOf(1000000)));
+                        break;
+                    case 4:
+                        historyRecord.setError(value.intValue());
+                        break;
+                    case 5:
+                        historyRecord.setFinished(value.intValue());
+                        break;
+                    case 6:
+                        historyRecord.setStartType(value.intValue());
+                        break;
+                    case 7:
+                        historyRecord.setCleanType(value.intValue());
+                        break;
+                    case 8:
+                        historyRecord.setFinishReason(value.intValue());
+                        break;
+                }
+            } catch (ClassCastException | NumberFormatException | IllegalStateException e) {
+            }
+        }
+        updateHistoryRecord(historyRecord);
+    }
+
+    private void updateHistoryRecord(HistoryRecordDTO historyRecordDTO) {
+        JsonObject historyRecord = GSON.toJsonTree(historyRecordDTO).getAsJsonObject();
+        if (historyRecordDTO.getStart() != null) {
+            historyRecord.addProperty("start", historyRecordDTO.getStart().split("\\+")[0]);
+            updateState(CHANNEL_HISTORY_START_TIME, new DateTimeType(historyRecordDTO.getStart().split("\\+")[0]));
+        }
+        if (historyRecordDTO.getEnd() != null) {
+            historyRecord.addProperty("end", historyRecordDTO.getEnd().split("\\+")[0]);
+            updateState(CHANNEL_HISTORY_END_TIME, new DateTimeType(historyRecordDTO.getEnd().split("\\+")[0]));
+        }
+        if (historyRecordDTO.getDuration() != null) {
+            long duration = TimeUnit.SECONDS.toMinutes(historyRecordDTO.getDuration().longValue());
+            historyRecord.addProperty("duration", duration);
+            updateState(CHANNEL_HISTORY_DURATION, new QuantityType<>(duration, Units.MINUTE));
+        }
+        if (historyRecordDTO.getArea() != null) {
+            historyRecord.addProperty("area", historyRecordDTO.getArea());
+            updateState(CHANNEL_HISTORY_AREA, new QuantityType<>(historyRecordDTO.getArea(), SIUnits.SQUARE_METRE));
+        }
+        if (historyRecordDTO.getError() != null) {
+            historyRecord.addProperty("error", historyRecordDTO.getError());
+            updateState(CHANNEL_HISTORY_ERROR, new DecimalType(historyRecordDTO.getError()));
+        }
+        if (historyRecordDTO.getFinished() != null) {
+            historyRecord.addProperty("finished", historyRecordDTO.getFinished());
+            updateState(CHANNEL_HISTORY_FINISH, new DecimalType(historyRecordDTO.getFinished()));
+        }
+        if (historyRecordDTO.getFinishReason() != null) {
+            historyRecord.addProperty("finish_reason", historyRecordDTO.getFinishReason());
+            updateState(CHANNEL_HISTORY_FINISHREASON, new DecimalType(historyRecordDTO.getFinishReason()));
+        }
+        if (historyRecordDTO.getDustCollectionStatus() != null) {
+            historyRecord.addProperty("dust_collection_status", historyRecordDTO.getDustCollectionStatus());
+            updateState(CHANNEL_HISTORY_DUSTCOLLECTION, new DecimalType(historyRecordDTO.getDustCollectionStatus()));
+        }
         updateState(CHANNEL_HISTORY_RECORD, new StringType(historyRecord.toString()));
+    }
+
+    private void updateRoomMapping(MiIoSendCommand response) {
+        for (RobotCababilities cmd : FEATURES_CHANNELS) {
+            if (response.getCommand().getCommand().contentEquals(cmd.getCommand())) {
+                if (response.getResult().isJsonArray()) {
+                    JsonArray rooms = response.getResult().getAsJsonArray();
+                    JsonArray mappedRoom = new JsonArray();
+                    for (JsonElement roomE : rooms) {
+                        JsonArray room = roomE.getAsJsonArray();
+                        HomeRoomDTO name = cloudConnector.getRoom(room.get(1).getAsString());
+                        if (name != null && name.getName() != null) {
+                            room.add(name.getName());
+                        } else {
+                            room.add("not found");
+                        }
+                        mappedRoom.add(room);
+                    }
+                    updateState(cmd.getChannel(), new StringType(mappedRoom.toString()));
+                } else {
+                    updateState(cmd.getChannel(), new StringType(response.getResult().toString()));
+                }
+                break;
+            }
+        }
     }
 
     @Override
@@ -489,6 +653,10 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
     public void initialize() {
         super.initialize();
         hasChannelStructure = false;
+        this.mapDrawOptions = RRMapDrawOptions
+                .getOptionsFromFile(BINDING_USERDATA_PATH + File.separator + "mapConfig.json", logger);
+        updateState(RobotCababilities.SEGMENT_CLEAN.getChannel(), new StringType("-"));
+        cloudConnector.getHomeLists();
     }
 
     @Override
@@ -526,15 +694,30 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
                 break;
             case CLEAN_SUMMARY_GET:
                 if (response.getResult().isJsonArray()) {
-                    updateHistory(response.getResult().getAsJsonArray());
+                    updateHistoryLegacy(response.getResult().getAsJsonArray());
+                } else if (response.getResult().isJsonObject()) {
+                    updateHistory(response.getResult().getAsJsonObject());
                 }
                 break;
             case CLEAN_RECORD_GET:
                 if (response.getResult().isJsonArray() && response.getResult().getAsJsonArray().size() > 0
                         && response.getResult().getAsJsonArray().get(0).isJsonArray()) {
-                    updateHistoryRecord(response.getResult().getAsJsonArray().get(0).getAsJsonArray());
+                    updateHistoryRecordLegacy(response.getResult().getAsJsonArray().get(0).getAsJsonArray());
+                } else if (response.getResult().isJsonArray() && response.getResult().getAsJsonArray().size() > 0
+                        && response.getResult().getAsJsonArray().get(0).isJsonObject()) {
+                    final HistoryRecordDTO historyRecordDTO = GSON.fromJson(
+                            response.getResult().getAsJsonArray().get(0).getAsJsonObject(), HistoryRecordDTO.class);
+                    if (historyRecordDTO != null) {
+                        updateHistoryRecord(historyRecordDTO);
+                    }
+                } else if (response.getResult().isJsonObject()) {
+                    final HistoryRecordDTO historyRecordDTO = GSON.fromJson(response.getResult().getAsJsonObject(),
+                            HistoryRecordDTO.class);
+                    if (historyRecordDTO != null) {
+                        updateHistoryRecord(historyRecordDTO);
+                    }
                 } else {
-                    logger.debug("Could not extract cleaning history record from: {}", response);
+                    logger.debug("Could not extract cleaning history record from: {}", response.getResult());
                 }
                 break;
             case GET_MAP:
@@ -551,11 +734,16 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
             case GET_LED_STATUS:
                 updateNumericChannel(response);
                 break;
+            case GET_ROOM_MAPPING:
+                updateRoomMapping(response);
+                break;
             case GET_CARPET_MODE:
             case GET_FW_FEATURES:
             case GET_CUSTOMIZED_CLEAN_MODE:
             case GET_MULTI_MAP_LIST:
-            case GET_ROOM_MAPPING:
+            case SET_COLLECT_DUST:
+            case SET_CLEAN_MOP_START:
+            case SET_CLEAN_MOP_STOP:
                 for (RobotCababilities cmd : FEATURES_CHANNELS) {
                     if (response.getCommand().getCommand().contentEquals(cmd.getCommand())) {
                         updateState(cmd.getChannel(), new StringType(response.getResult().toString()));
@@ -650,14 +838,15 @@ public class MiIoVacuumHandler extends MiIoAbstractHandler {
                 if (mapDl != null) {
                     byte[] mapData = mapDl.getBytes();
                     RRMapDraw rrMap = RRMapDraw.loadImage(new ByteArrayInputStream(mapData));
+                    rrMap.setDrawOptions(mapDrawOptions);
                     ByteArrayOutputStream baos = new ByteArrayOutputStream();
                     if (logger.isDebugEnabled()) {
                         final String mapPath = BINDING_USERDATA_PATH + File.separator + map
-                                + DATEFORMATTER.format(new Date()) + ".rrmap";
+                                + LocalDateTime.now().format(DATEFORMATTER) + ".rrmap";
                         CloudUtil.writeBytesToFileNio(mapData, mapPath);
                         logger.debug("Mapdata saved to {}", mapPath);
                     }
-                    ImageIO.write(rrMap.getImage(MAP_SCALE), "jpg", baos);
+                    ImageIO.write(rrMap.getImage(), "jpg", baos);
                     byte[] byteArray = baos.toByteArray();
                     if (byteArray != null && byteArray.length > 0) {
                         return new RawType(byteArray, "image/jpeg");

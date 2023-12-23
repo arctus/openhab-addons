@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -30,6 +30,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.api.annotations.OnWebSocketClose;
@@ -73,10 +74,11 @@ public class WebSocketConnection {
             IWebSocketCommandHandler webSocketCommandHandler) throws IOException {
         this.webSocketCommandHandler = webSocketCommandHandler;
         amazonEchoControlWebSocket = new AmazonEchoControlWebSocket();
-        webSocketClient = new WebSocketClient(new SslContextFactory.Client());
+        HttpClient httpClient = new HttpClient(new SslContextFactory.Client());
+        webSocketClient = new WebSocketClient(httpClient);
         try {
             String host;
-            if (amazonSite.equalsIgnoreCase("amazon.com")) {
+            if ("amazon.com".equalsIgnoreCase(amazonSite)) {
                 host = "dp-gw-na-js." + amazonSite;
             } else {
                 host = "dp-gw-na." + amazonSite;
@@ -486,7 +488,6 @@ public class WebSocketConnection {
                     sum += toUnsignedInt((data[index] & 0xFF) << ((index & 3 ^ 3) << 3));
                     overflow += computeBits(sum, 32);
                     sum = toUnsignedInt((int) sum & (int) 4294967295L);
-
                 } else {
                     index = exclusionEnd - 1;
                 }

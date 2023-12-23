@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,10 +12,15 @@
  */
 package org.openhab.binding.nikohomecontrol.internal.protocol;
 
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.nikohomecontrol.internal.protocol.nhc1.NikoHomeControlCommunication1;
 import org.openhab.binding.nikohomecontrol.internal.protocol.nhc2.NikoHomeControlCommunication2;
 import org.slf4j.Logger;
@@ -45,8 +50,16 @@ public abstract class NikoHomeControlCommunication {
 
     protected final NhcControllerEvent handler;
 
-    protected NikoHomeControlCommunication(NhcControllerEvent handler) {
+    protected final ScheduledExecutorService scheduler;
+
+    // restart attempts
+    private volatile int delay = 0;
+    private volatile int attempt = 0;
+    protected volatile @Nullable ScheduledFuture<?> scheduledRestart = null;
+
+    protected NikoHomeControlCommunication(NhcControllerEvent handler, ScheduledExecutorService scheduler) {
         this.handler = handler;
+        this.scheduler = scheduler;
     }
 
     /**
@@ -57,30 +70,87 @@ public abstract class NikoHomeControlCommunication {
     /**
      * Stop Communication with Niko Home Control system.
      */
-    public abstract void stopCommunication();
+    public void stopCommunication() {
+        stopScheduledRestart();
+
+        resetCommunication();
+    }
+
+    /**
+     * Stop Communication with Niko Home Control system, but keep reconnection attempts going.
+     */
+    public abstract void resetCommunication();
+
+    protected synchronized void stopScheduledRestart() {
+        ScheduledFuture<?> future = scheduledRestart;
+        if (future != null) {
+            future.cancel(true);
+        }
+        scheduledRestart = null;
+        delay = 0;
+        attempt = 0;
+    }
 
     /**
      * Close and restart communication with Niko Home Control system.
      */
     public synchronized void restartCommunication() {
-        stopCommunication();
+        resetCommunication();
 
         logger.debug("restart communication from thread {}", Thread.currentThread().getId());
 
         startCommunication();
     }
 
+    private synchronized void checkAndRestartCommunication() {
+        restartCommunication();
+
+        // Try again if it didn't succeed
+        if (!communicationActive()) {
+            attempt++;
+            delay = ((attempt <= 5) ? 30 : 60);
+            logger.debug("schedule communication restart in {} seconds", delay);
+            scheduledRestart = scheduler.schedule(this::checkAndRestartCommunication, delay, TimeUnit.SECONDS);
+        } else {
+            stopScheduledRestart();
+        }
+    }
+
     /**
-     * Method to check if communication with Niko Home Control is active.
+     * Close and restart communication with Niko Home Control system. This method will keep doing multiple reconnection
+     * attempts, starting immediately, then 5 times with 30 second intervals and every minute thereafter until the
+     * connection is re-established.
+     */
+    public synchronized void scheduleRestartCommunication() {
+        // Don't do this if we already scheduled to restart
+        if (scheduledRestart == null) {
+            delay = 0;
+            attempt = 0;
+            scheduledRestart = scheduler.schedule(this::checkAndRestartCommunication, 0, TimeUnit.SECONDS);
+        }
+    }
+
+    /**
+     * Method to check if communication with Niko Home Control is active. This method can be blocking for max 5s to wait
+     * for completion of startup.
      *
      * @return True if active
      */
     public abstract boolean communicationActive();
 
     /**
+     * Return the timezone for the system.
+     *
+     * @return zoneId
+     */
+    public ZoneId getTimeZone() {
+        return handler.getTimeZone();
+    }
+
+    /**
      * Return all actions in the Niko Home Control Controller.
      *
-     * @return <code>Map&ltString, {@link NhcAction}></code>
+     * @return <code>Map&lt;String, {@link NhcAction}></code>
      */
     public Map<String, NhcAction> getActions() {
         return actions;
@@ -89,7 +159,7 @@ public abstract class NikoHomeControlCommunication {
     /**
      * Return all thermostats in the Niko Home Control Controller.
      *
-     * @return <code>Map&ltString, {@link NhcThermostat}></code>
+     * @return <code>Map&lt;String, {@link NhcThermostat}></code>
      */
     public Map<String, NhcThermostat> getThermostats() {
         return thermostats;
@@ -98,7 +168,7 @@ public abstract class NikoHomeControlCommunication {
     /**
      * Return all energyMeters meters in the Niko Home Control Controller.
      *
-     * @return <code>Map&ltString, {@link NhcEnergyMeter}></code>
+     * @return <code>Map&lt;String, {@link NhcEnergyMeter}></code>
      */
     public Map<String, NhcEnergyMeter> getEnergyMeters() {
         return energyMeters;

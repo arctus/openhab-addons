@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -49,7 +49,7 @@ import org.slf4j.LoggerFactory;
 @NonNullByDefault
 public class SmartHomeDevicesDiscovery extends AbstractDiscoveryService {
     private AccountHandler accountHandler;
-    private final Logger logger = LoggerFactory.getLogger(SmartHomeDevicesDiscovery.class);
+    private Logger logger = LoggerFactory.getLogger(SmartHomeDevicesDiscovery.class);
 
     private @Nullable ScheduledFuture<?> startScanStateJob;
     private @Nullable Long activateTimeStamp;
@@ -143,8 +143,7 @@ public class SmartHomeDevicesDiscovery extends AbstractDiscoveryService {
             String deviceName = null;
             Map<String, Object> props = new HashMap<>();
 
-            if (smartHomeDevice instanceof SmartHomeDevice) {
-                SmartHomeDevice shd = (SmartHomeDevice) smartHomeDevice;
+            if (smartHomeDevice instanceof SmartHomeDevice shd) {
                 logger.trace("Found SmartHome device: {}", shd);
 
                 String entityId = shd.entityId;
@@ -165,7 +164,7 @@ public class SmartHomeDevicesDiscovery extends AbstractDiscoveryService {
                     // Connected through skill
                     continue;
                 }
-                if (!(smartHomeDeviceDiscoveryMode == 2) && "openHAB".equalsIgnoreCase(shd.manufacturerName)) {
+                if (smartHomeDeviceDiscoveryMode != 2 && "openHAB".equalsIgnoreCase(shd.manufacturerName)) {
                     // OpenHAB device
                     continue;
                 }
@@ -189,6 +188,8 @@ public class SmartHomeDevicesDiscovery extends AbstractDiscoveryService {
                         deviceName = "Alexa Color Controller on " + shd.friendlyName;
                     } else if (interfaces.contains("Alexa.PowerController")) {
                         deviceName = "Alexa Plug on " + shd.friendlyName;
+                    } else if (interfaces.contains("Alexa.ThermostatController")) {
+                        deviceName = "Alexa Smart " + shd.friendlyName;
                     } else {
                         deviceName = "Unknown Device on " + shd.friendlyName;
                     }
@@ -201,8 +202,7 @@ public class SmartHomeDevicesDiscovery extends AbstractDiscoveryService {
                     deviceName = shd.friendlyName;
                 }
                 props.put(DEVICE_PROPERTY_ID, id);
-            } else if (smartHomeDevice instanceof SmartHomeGroup) {
-                SmartHomeGroup shg = (SmartHomeGroup) smartHomeDevice;
+            } else if (smartHomeDevice instanceof SmartHomeGroup shg) {
                 logger.trace("Found SmartHome device: {}", shg);
 
                 String id = shg.findId();
@@ -213,7 +213,7 @@ public class SmartHomeDevicesDiscovery extends AbstractDiscoveryService {
                 Set<SmartHomeDevice> supportedChildren = SmartHomeDeviceHandler.getSupportedSmartHomeDevices(shg,
                         deviceList);
                 if (supportedChildren.isEmpty()) {
-                    // No children with an supported interface
+                    // No children with a supported interface
                     continue;
                 }
                 thingUID = new ThingUID(THING_TYPE_SMART_HOME_DEVICE_GROUP, bridgeThingUID, id.replace(".", "-"));

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -20,6 +20,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.net.Socket;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.util.concurrent.TimeUnit;
@@ -59,8 +60,7 @@ public class TivoStatusProvider {
      * Instantiates a new TivoConfigStatusProvider.
      *
      * @param tivoConfigData {@link TivoConfigData} configuration data for the specific thing.
-     * @param tivoStatusData {@link TivoStatusData} status data for the specific thing.
-     * @param tivoHandler {@link TivoHandler} parent handler object for the TivoConfigStatusProvider.
+     * @param tivoHandler {@link TiVoHandler} parent handler object for the TivoConfigStatusProvider.
      *
      */
 
@@ -72,11 +72,10 @@ public class TivoStatusProvider {
     }
 
     /**
-     * {@link statusRefresh} initiates a connection to the TiVo. When a new connection is made and the TiVo is online,
-     * the current channel is always returned. The connection is then closed (allows the socket to be used by other
-     * devices).
+     * {@link #statusRefresh()} initiates a connection to the TiVo. When a new connection is made and the TiVo is
+     * online, the current channel is always returned. The connection is then closed (allows the socket to be used
+     * by other devices).
      *
-     * @return {@link TivoStatusData} object
      * @throws InterruptedException
      */
     public void statusRefresh() throws InterruptedException {
@@ -84,6 +83,13 @@ public class TivoStatusProvider {
             logger.debug(" statusRefresh '{}' - EXISTING status data - '{}'", tivoConfigData.getCfgIdentifier(),
                     tivoStatusData.toString());
         }
+
+        // this will close the connection and re-open every 12 hours
+        if (tivoConfigData.isKeepConnActive()) {
+            connTivoDisconnect();
+            doNappTime();
+        }
+
         connTivoConnect();
         doNappTime();
         if (!tivoConfigData.isKeepConnActive()) {
@@ -116,7 +122,7 @@ public class TivoStatusProvider {
         }
         for (int i = 1; i <= repeatCount; i++) {
             // Send the command
-            streamWriter.println(tivoCommand.toString() + "\r");
+            streamWriter.println(tivoCommand + "\r");
             if (streamWriter.checkError()) {
                 logger.debug("TiVo '{}' - called cmdTivoSend and encountered an IO error",
                         tivoConfigData.getCfgIdentifier());
@@ -413,7 +419,6 @@ public class TivoStatusProvider {
          * BufferedReader.
          *
          * @param inputStream socket input stream.
-         * @throws IOException
          */
         public StreamReader(InputStream inputStream) {
             this.setName("OH-binding-" + thingUid + "-" + tivoConfigData.getHost() + ":" + tivoConfigData.getTcpPort());
@@ -434,7 +439,7 @@ public class TivoStatusProvider {
 
                     try {
                         receivedData = reader.readLine();
-                    } catch (SocketTimeoutException e) {
+                    } catch (SocketTimeoutException | SocketException e) {
                         // Do nothing. Just allow the thread to check if it has to stop.
                     }
 

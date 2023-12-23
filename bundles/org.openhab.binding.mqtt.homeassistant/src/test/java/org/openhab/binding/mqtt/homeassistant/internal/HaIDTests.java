@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -17,14 +17,16 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsIterableContaining.hasItem;
 
 import java.util.Collection;
-import java.util.Collections;
+import java.util.List;
 
+import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
 import org.openhab.core.config.core.Configuration;
 
 /**
  * @author Jochen Klein - Initial contribution
  */
+@NonNullByDefault
 public class HaIDTests {
 
     @Test
@@ -43,8 +45,7 @@ public class HaIDTests {
 
         assertThat(restore, is(subject));
 
-        HandlerConfiguration haConfig = new HandlerConfiguration(subject.baseTopic,
-                Collections.singletonList(subject.toShortTopic()));
+        HandlerConfiguration haConfig = new HandlerConfiguration(subject.baseTopic, List.of(subject.toShortTopic()));
 
         Collection<HaID> restoreList = HaID.fromConfig(haConfig);
         assertThat(restoreList, hasItem(new HaID("homeassistant/switch/name/config")));
@@ -66,8 +67,7 @@ public class HaIDTests {
 
         assertThat(restore, is(subject));
 
-        HandlerConfiguration haConfig = new HandlerConfiguration(subject.baseTopic,
-                Collections.singletonList(subject.toShortTopic()));
+        HandlerConfiguration haConfig = new HandlerConfiguration(subject.baseTopic, List.of(subject.toShortTopic()));
 
         Collection<HaID> restoreList = HaID.fromConfig(haConfig);
         assertThat(restoreList, hasItem(new HaID("homeassistant/switch/node/name/config")));

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -51,13 +51,15 @@ import org.xml.sax.SAXException;
  *
  * Client for accessing FMI weather data
  *
+ * <p>
  * Subject to license terms https://en.ilmatieteenlaitos.fi/open-data
  *
- *
- * All weather stations:
- * https://opendata.fmi.fi/wfs/fin?service=WFS&version=2.0.0&request=GetFeature&storedquery_id=fmi::ef::stations&networkid=121&
- * Networkid parameter isexplained in entries of
- * https://opendata.fmi.fi/wfs/fin?service=WFS&version=2.0.0&request=GetFeature&storedquery_id=fmi::ef::stations
+ * @see <a href=
+ *      "https://opendata.fmi.fi/wfs/fin?service=WFS&version=2.0.0&request=GetFeature&storedquery_id=fmi::ef::stations&networkid=121&">
+ *      All weather stations</a>
+ * @see <a href=
+ *      "https://opendata.fmi.fi/wfs/fin?service=WFS&version=2.0.0&request=GetFeature&storedquery_id=fmi::ef::stations">
+ *      Networkid parameter is explained in entries of</a>
  *
  * @author Sami Salonen - Initial contribution
  *
@@ -71,7 +73,7 @@ public class Client {
 
     private static final Map<String, String> NAMESPACES = new HashMap<>();
     static {
-        NAMESPACES.put("target", "http://xml.fmi.fi/namespace/om/atmosphericfeatures/1.0");
+        NAMESPACES.put("target", "http://xml.fmi.fi/namespace/om/atmosphericfeatures/1.1");
         NAMESPACES.put("gml", "http://www.opengis.net/gml/3.2");
         NAMESPACES.put("xlink", "http://www.w3.org/1999/xlink");
         NAMESPACES.put("ows", "http://www.opengis.net/ows/1.1");
@@ -125,7 +127,7 @@ public class Client {
      * @return data corresponding to the query
      * @throws FMIIOException on all I/O errors
      * @throws FMIUnexpectedResponseException on all unexpected content errors
-     * @throw FMIExceptionReportException on explicit error responses from the server
+     * @throws FMIExceptionReportException on explicit error responses from the server
      */
     public FMIResponse query(Request request, int timeoutMillis)
             throws FMIExceptionReportException, FMIUnexpectedResponseException, FMIIOException {
@@ -152,7 +154,7 @@ public class Client {
      * @return locations representing stations
      * @throws FMIIOException on all I/O errors
      * @throws FMIUnexpectedResponseException on all unexpected content errors
-     * @throw FMIExceptionReportException on explicit error responses from the server
+     * @throws FMIExceptionReportException on explicit error responses from the server
      */
     public Set<Location> queryWeatherStations(int timeoutMillis)
             throws FMIIOException, FMIUnexpectedResponseException, FMIExceptionReportException {
@@ -374,7 +376,8 @@ public class Client {
      */
     private String takeFirstOrError(String errorDescription, String[] values) throws FMIUnexpectedResponseException {
         if (values.length != 1) {
-            throw new FMIUnexpectedResponseException(String.format("No unique match found: %s", errorDescription));
+            throw new FMIUnexpectedResponseException(
+                    String.format("No unique match found: %s (found %d)", errorDescription, values.length));
         }
         return values[0];
     }

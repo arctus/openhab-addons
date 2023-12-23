@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -15,7 +15,6 @@ package org.openhab.binding.freebox.internal.api;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
@@ -465,16 +464,11 @@ public class FreeboxApiManager {
         // Parse the full response in case of success
         T fullResponse = gson.fromJson(jsonResponse, responseClass);
         fullResponse.evaluate();
-        F result = fullResponse.getResult();
-        return result;
+        return fullResponse.getResult();
     }
 
     private String encodeUrl(String url) throws FreeboxException {
-        try {
-            return URLEncoder.encode(url, StandardCharsets.UTF_8.name());
-        } catch (UnsupportedEncodingException e) {
-            throw new FreeboxException("Encoding the URL \"" + url + "\" in UTF-8 failed", e);
-        }
+        return URLEncoder.encode(url, StandardCharsets.UTF_8);
     }
 
     public static String hmacSha1(String key, String value) throws FreeboxException {

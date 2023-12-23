@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -13,6 +13,7 @@
 package org.openhab.binding.shelly.internal.manager;
 
 import static org.openhab.binding.shelly.internal.ShellyBindingConstants.*;
+import static org.openhab.binding.shelly.internal.discovery.ShellyThingCreator.*;
 import static org.openhab.binding.shelly.internal.manager.ShellyManagerConstants.*;
 import static org.openhab.binding.shelly.internal.util.ShellyUtils.*;
 import static org.openhab.core.thing.Thing.*;
@@ -44,7 +45,7 @@ import org.openhab.binding.shelly.internal.ShellyHandlerFactory;
 import org.openhab.binding.shelly.internal.api.ShellyApiException;
 import org.openhab.binding.shelly.internal.api.ShellyApiResult;
 import org.openhab.binding.shelly.internal.api.ShellyDeviceProfile;
-import org.openhab.binding.shelly.internal.api.ShellyHttpApi;
+import org.openhab.binding.shelly.internal.api.ShellyHttpClient;
 import org.openhab.binding.shelly.internal.config.ShellyBindingConfiguration;
 import org.openhab.binding.shelly.internal.config.ShellyThingConfiguration;
 import org.openhab.binding.shelly.internal.handler.ShellyDeviceStats;
@@ -163,7 +164,7 @@ public class ShellyManagerPage {
         }
 
         String html = "";
-        String file = TEMPLATE_PATH + template;
+        String file = BUNDLE_RESOURCE_SNIPLETS + "/" + template;
         logger.debug("Read HTML from {}", file);
         ClassLoader cl = ShellyManagerInterface.class.getClassLoader();
         if (cl != null) {
@@ -211,11 +212,11 @@ public class ShellyManagerPage {
         ShellyDeviceStats stats = th.getStats();
         properties.putAll(stats.asProperties());
 
-        for (Map.Entry<String, Object> p : thing.getConfiguration().getProperties().entrySet()) {
+        for (Map.Entry<String, @Nullable Object> p : thing.getConfiguration().getProperties().entrySet()) {
             String key = p.getKey();
-            if (p.getValue() != null) {
-                String value = p.getValue().toString();
-                properties.put(key, value);
+            Object o = p.getValue();
+            if (o != null) {
+                properties.put(key, o.toString());
             }
         }
 
@@ -253,13 +254,17 @@ public class ShellyManagerPage {
         properties.put(ATTRIBUTE_APR_TRESHOLD,
                 profile.settings.apRoaming != null ? getOption(profile.settings.apRoaming.threshold) : "n/a");
         properties.put(ATTRIBUTE_PWD_PROTECT,
-                profile.auth ? "enabled, user=" + getString(profile.settings.login.username) : "disabled");
+                getBool(profile.device.auth) ? "enabled, user=" + getString(profile.settings.login.username)
+                        : "disabled");
         String tz = getString(profile.settings.timezone);
         properties.put(ATTRIBUTE_TIMEZONE,
                 (tz.isEmpty() ? "n/a" : tz) + ", auto-detect: " + getBool(profile.settings.tzautodetect));
         properties.put(ATTRIBUTE_ACTIONS_SKIPPED,
                 profile.status.astats != null ? String.valueOf(profile.status.astats.skipped) : "n/a");
         properties.put(ATTRIBUTE_MAX_ITEMP, stats.maxInternalTemp > 0 ? stats.maxInternalTemp + " °C" : "n/a");
+        if (stats.maxInternalTemp == 0) {
+            properties.replace(CHANNEL_DEVST_ITEMP, "n/a");
+        }
 
         // Shelly H&T: When external power is connected the battery level is not valid
         if (!profile.isHT || (getInteger(profile.settings.externalPower) == 0)) {
@@ -334,15 +339,14 @@ public class ShellyManagerPage {
         State state = thingHandler.getChannelValue(group, attribute);
         String value = "";
         if (state != UnDefType.NULL) {
-            if (state instanceof DateTimeType) {
-                DateTimeType dt = (DateTimeType) state;
+            if (state instanceof DateTimeType dateTimeState) {
                 switch (attribute) {
                     case ATTRIBUTE_LAST_ALARM:
-                        value = dt.format(null).replace('T', ' ').replace('-', '/');
+                        value = dateTimeState.format(null).replace('T', ' ').replace('-', '/');
                         break;
                     default:
-                        value = getTimestamp(dt);
-                        value = dt.format(null).replace('T', ' ').replace('-', '/');
+                        value = getTimestamp(dateTimeState);
+                        value = dateTimeState.format(null).replace('T', ' ').replace('-', '/');
                 }
             } else {
                 value = state.toString();
@@ -456,7 +460,7 @@ public class ShellyManagerPage {
             list.versions = new ArrayList<FwArchEntry>();
         } else {
             // Create selection list
-            json = "{" + json.replace("[{", "\"versions\":[{") + "}"; // make it an named array
+            json = "{" + json.replace("[{", "\"versions\":[{") + "}"; // make it a named array
             list = fromJson(gson, json, FwArchList.class);
         }
 
@@ -491,7 +495,7 @@ public class ShellyManagerPage {
         try {
             Request request = httpClient.newRequest(url).method(method).timeout(SHELLY_API_TIMEOUT_MS,
                     TimeUnit.MILLISECONDS);
-            request.header(HttpHeader.ACCEPT, ShellyHttpApi.CONTENT_TYPE_JSON);
+            request.header(HttpHeader.ACCEPT, ShellyHttpClient.CONTENT_TYPE_JSON);
             logger.trace("{}: HTTP {} {}", LOG_PREFIX, method, url);
             ContentResponse contentResponse = request.send();
             apiResult = new ShellyApiResult(contentResponse);
@@ -534,7 +538,7 @@ public class ShellyManagerPage {
     }
 
     protected static String getDeviceIp(Map<String, String> properties) {
-        return getString(properties.get("deviceIp"));
+        return getString(properties.get(ATTRIBUTE_DEVICEIP));
     }
 
     protected static String getDeviceName(Map<String, String> properties) {

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -17,8 +17,9 @@ import static org.openhab.binding.network.internal.NetworkBindingConstants.*;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -181,7 +182,7 @@ public class NetworkHandler extends BaseThingHandler
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "No port configured!");
                 return;
             }
-            presenceDetection.setServicePorts(Collections.singleton(port));
+            presenceDetection.setServicePorts(Set.of(port));
         } else {
             // It does not harm to send an additional UDP packet to a device,
             // therefore we assume all ping devices are iOS devices. If this
@@ -198,7 +199,8 @@ public class NetworkHandler extends BaseThingHandler
         presenceDetection.setRefreshInterval(handlerConfiguration.refreshInterval.longValue());
         presenceDetection.setTimeout(handlerConfiguration.timeout.intValue());
 
-        wakeOnLanPacketSender = new WakeOnLanPacketSender(handlerConfiguration.macAddress);
+        wakeOnLanPacketSender = new WakeOnLanPacketSender(handlerConfiguration.macAddress,
+                handlerConfiguration.hostname, handlerConfiguration.port);
 
         updateStatus(ThingStatus.ONLINE);
         presenceDetection.startAutomaticRefresh(scheduler);
@@ -238,14 +240,19 @@ public class NetworkHandler extends BaseThingHandler
 
     @Override
     public Collection<Class<? extends ThingHandlerService>> getServices() {
-        return Collections.singletonList(NetworkActions.class);
+        return List.of(NetworkActions.class);
     }
 
-    public void sendWakeOnLanPacket() {
+    public void sendWakeOnLanPacketViaIp() {
+        // Hostname can't be null
+        wakeOnLanPacketSender.sendWakeOnLanPacketViaIp();
+    }
+
+    public void sendWakeOnLanPacketViaMac() {
         if (handlerConfiguration.macAddress.isEmpty()) {
             throw new IllegalStateException(
                     "Cannot send WoL packet because the 'macAddress' is not configured for " + thing.getUID());
         }
-        wakeOnLanPacketSender.sendPacket();
+        wakeOnLanPacketSender.sendWakeOnLanPacketViaMac();
     }
 }

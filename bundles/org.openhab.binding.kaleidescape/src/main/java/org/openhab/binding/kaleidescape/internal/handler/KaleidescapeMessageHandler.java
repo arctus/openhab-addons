@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -34,6 +34,7 @@ import org.openhab.binding.kaleidescape.internal.communication.KaleidescapeStatu
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.PercentType;
+import org.openhab.core.library.types.PlayPauseType;
 import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.types.RawType;
 import org.openhab.core.library.types.StringType;
@@ -57,9 +58,19 @@ public enum KaleidescapeMessageHandler {
         }
     },
     HIGHLIGHTED_SELECTION {
+        private final Logger logger = LoggerFactory.getLogger(KaleidescapeMessageHandler.class);
+
         @Override
         public void handleMessage(String message, KaleidescapeHandler handler) {
             handler.updateChannel(KaleidescapeBindingConstants.HIGHLIGHTED_SELECTION, new StringType(message));
+
+            if (handler.isLoadHighlightedDetails) {
+                try {
+                    handler.connector.sendCommand(GET_CONTENT_DETAILS + message + ":");
+                } catch (KaleidescapeException e) {
+                    logger.debug("GET_CONTENT_DETAILS - exception loading content details for handle: {}", message);
+                }
+            }
         }
     },
     DEVICE_POWER_STATE {
@@ -100,6 +111,8 @@ public enum KaleidescapeMessageHandler {
             if (matcher.find()) {
                 handler.updateChannel(PLAY_MODE,
                         new StringType(KaleidescapeStatusCodes.PLAY_MODE.get(matcher.group(1))));
+
+                handler.updateChannel(CONTROL, "2".equals(matcher.group(1)) ? PlayPauseType.PLAY : PlayPauseType.PAUSE);
 
                 handler.updateChannel(PLAY_SPEED, new StringType(matcher.group(2)));
 
@@ -273,6 +286,15 @@ public enum KaleidescapeMessageHandler {
                 handler.updateChannel(MUSIC_ALBUM_HANDLE, new StringType(matcher.group(5)));
 
                 handler.updateChannel(MUSIC_NOWPLAY_HANDLE, new StringType(matcher.group(6)));
+
+                if (handler.isLoadAlbumDetails) {
+                    try {
+                        handler.connector.sendCommand(GET_CONTENT_DETAILS + matcher.group(5) + ":");
+                    } catch (KaleidescapeException e) {
+                        logger.debug("GET_CONTENT_DETAILS - exception loading album details for handle: {}",
+                                matcher.group(5));
+                    }
+                }
             } else {
                 logger.debug("MUSIC_TITLE - no match on message: {}", message);
             }
@@ -292,6 +314,9 @@ public enum KaleidescapeMessageHandler {
             if (matcher.find()) {
                 handler.updateChannel(MUSIC_PLAY_MODE,
                         new StringType(KaleidescapeStatusCodes.PLAY_MODE.get(matcher.group(1))));
+
+                handler.updateChannel(MUSIC_CONTROL,
+                        "2".equals(matcher.group(1)) ? PlayPauseType.PLAY : PlayPauseType.PAUSE);
 
                 handler.updateChannel(MUSIC_PLAY_SPEED, new StringType(matcher.group(2)));
 
@@ -387,14 +412,14 @@ public enum KaleidescapeMessageHandler {
                     // special case for cover art image
                     if (DETAIL_COVER_URL.equals(metaType)) {
                         handler.updateDetailChannel(metaType, new StringType(value));
-                        if (!value.isEmpty()) {
+                        if (!value.isEmpty() && handler.isChannelLinked(DETAIL + DETAIL_COVER_ART)) {
                             try {
                                 ContentResponse contentResponse = handler.httpClient.newRequest(value).method(GET)
                                         .timeout(10, TimeUnit.SECONDS).send();
                                 int httpStatus = contentResponse.getStatus();
                                 if (httpStatus == OK_200) {
                                     handler.updateDetailChannel(DETAIL_COVER_ART,
-                                            new RawType(contentResponse.getContent(), RawType.DEFAULT_MIME_TYPE));
+                                            new RawType(contentResponse.getContent(), "image/jpeg"));
                                 } else {
                                     handler.updateDetailChannel(DETAIL_COVER_ART, UnDefType.NULL);
                                 }

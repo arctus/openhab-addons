@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -17,7 +17,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -47,6 +46,7 @@ import org.openhab.core.model.script.engine.action.ActionService;
 import org.openhab.core.net.HttpServiceUtil;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.TypeParser;
+import org.openhab.core.util.StringUtils;
 import org.openhab.io.openhabcloud.NotificationAction;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
@@ -67,8 +67,10 @@ import org.slf4j.LoggerFactory;
 @Component(service = { CloudService.class, EventSubscriber.class,
         ActionService.class }, configurationPid = "org.openhab.openhabcloud", property = Constants.SERVICE_PID
                 + "=org.openhab.openhabcloud")
-@ConfigurableService(category = "io", label = "openHAB Cloud", description_uri = "io:openhabcloud")
+@ConfigurableService(category = "io", label = "openHAB Cloud", description_uri = CloudService.CONFIG_URI)
 public class CloudService implements ActionService, CloudClientListener, EventSubscriber {
+
+    protected static final String CONFIG_URI = "io:openhabcloud";
 
     private static final String CFG_EXPOSE = "expose";
     private static final String CFG_BASE_URL = "baseURL";
@@ -78,8 +80,6 @@ public class CloudService implements ActionService, CloudClientListener, EventSu
     private static final int DEFAULT_LOCAL_OPENHAB_MAX_CONCURRENT_REQUESTS = 200;
     private static final int DEFAULT_LOCAL_OPENHAB_REQUEST_TIMEOUT = 30000;
     private static final String HTTPCLIENT_NAME = "openhabcloud";
-    private static final String CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    private static final SecureRandom SR = new SecureRandom();
 
     private final Logger logger = LoggerFactory.getLogger(CloudService.class);
 
@@ -209,8 +209,7 @@ public class CloudService implements ActionService, CloudClientListener, EventSu
 
         exposedItems = new HashSet<>();
         Object expCfg = config.get(CFG_EXPOSE);
-        if (expCfg instanceof String) {
-            String value = (String) expCfg;
+        if (expCfg instanceof String value) {
             while (value.startsWith("[")) {
                 value = value.substring(1);
             }
@@ -220,13 +219,13 @@ public class CloudService implements ActionService, CloudClientListener, EventSu
             for (String itemName : Arrays.asList((value).split(","))) {
                 exposedItems.add(itemName.trim());
             }
-        } else if (expCfg instanceof Iterable) {
-            for (Object entry : ((Iterable<?>) expCfg)) {
+        } else if (expCfg instanceof Iterable iterable) {
+            for (Object entry : iterable) {
                 exposedItems.add(entry.toString());
             }
         }
 
-        logger.debug("UUID = {}, secret = {}", InstanceUUID.get(), getSecret());
+        logger.debug("UUID = {}, secret = {}", censored(InstanceUUID.get()), censored(getSecret()));
 
         if (cloudClient != null) {
             cloudClient.shutdown();
@@ -235,6 +234,8 @@ public class CloudService implements ActionService, CloudClientListener, EventSu
         if (!httpClient.isRunning()) {
             try {
                 httpClient.start();
+                // we act as a blind proxy, don't try to auto decode content
+                httpClient.getContentDecoderFactories().clear();
             } catch (Exception e) {
                 logger.error("Could not start Jetty http client", e);
             }
@@ -243,7 +244,6 @@ public class CloudService implements ActionService, CloudClientListener, EventSu
         String localBaseUrl = "http://localhost:" + localPort;
         cloudClient = new CloudClient(httpClient, InstanceUUID.get(), getSecret(), cloudBaseUrl, localBaseUrl,
                 remoteAccessEnabled, exposedItems);
-        cloudClient.setOpenHABVersion(OpenHAB.getVersion());
         cloudClient.connect();
         cloudClient.setListener(this);
         NotificationAction.cloudService = this;
@@ -282,20 +282,12 @@ public class CloudService implements ActionService, CloudClientListener, EventSu
         file.getParentFile().mkdirs();
         try {
             Files.writeString(file.toPath(), content, StandardCharsets.UTF_8);
-            logger.debug("Created file '{}' with content '{}'", file.getAbsolutePath(), content);
+            logger.debug("Created file '{}' with content '{}'", file.getAbsolutePath(), censored(content));
         } catch (FileNotFoundException e) {
             logger.error("Couldn't create file '{}'.", file.getPath(), e);
         } catch (IOException e) {
             logger.error("Couldn't write to file '{}'.", file.getPath(), e);
         }
-    }
-
-    private String randomString(int length) {
-        StringBuilder sb = new StringBuilder(length);
-        for (int i = 0; i < length; i++) {
-            sb.append(CHARS.charAt(SR.nextInt(CHARS.length())));
-        }
-        return sb.toString();
     }
 
     /**
@@ -308,15 +300,22 @@ public class CloudService implements ActionService, CloudClientListener, EventSu
         String newSecretString = "";
 
         if (!file.exists()) {
-            newSecretString = randomString(20);
-            logger.debug("New secret = {}", newSecretString);
+            newSecretString = StringUtils.getRandomAlphanumeric(20);
+            logger.debug("New secret = {}", censored(newSecretString));
             writeFile(file, newSecretString);
         } else {
             newSecretString = readFirstLine(file);
-            logger.debug("Using secret at '{}' with content '{}'", file.getAbsolutePath(), newSecretString);
+            logger.debug("Using secret at '{}' with content '{}'", file.getAbsolutePath(), censored(newSecretString));
         }
 
         return newSecretString;
+    }
+
+    private static String censored(String secret) {
+        if (secret.length() < 4) {
+            return "*******";
+        }
+        return secret.substring(0, 2) + "..." + secret.substring(secret.length() - 2, secret.length());
     }
 
     @Override
@@ -365,8 +364,12 @@ public class CloudService implements ActionService, CloudClientListener, EventSu
     @Override
     public void receive(Event event) {
         ItemStateEvent ise = (ItemStateEvent) event;
-        if (exposedItems != null && exposedItems.contains(ise.getItemName())) {
+        if (supportsUpdates() && exposedItems != null && exposedItems.contains(ise.getItemName())) {
             cloudClient.sendItemUpdate(ise.getItemName(), ise.getItemState().toString());
         }
+    }
+
+    private boolean supportsUpdates() {
+        return cloudBaseUrl.contains(CFG_BASE_URL);
     }
 }

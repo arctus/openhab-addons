@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,6 +12,9 @@
  */
 
 package org.openhab.binding.haywardomnilogic.internal;
+
+import java.util.HashMap;
+import java.util.Map;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.openhab.binding.haywardomnilogic.internal.handler.HaywardBridgeHandler;
@@ -32,7 +35,7 @@ import org.openhab.core.types.Command;
 import org.openhab.core.types.State;
 
 /**
- * The {@link HaywarThingHandler} is a subclass of the BaseThingHandler and a Super
+ * The {@link HaywardThingHandler} is a subclass of the BaseThingHandler and a Super
  * Class to each Hayward Thing Handler
  *
  * @author Matt Myers - Initial contribution
@@ -56,23 +59,33 @@ public abstract class HaywardThingHandler extends BaseThingHandler {
 
     public abstract void getTelemetry(String xmlResponse) throws HaywardException;
 
+    public void setStateDescriptions() throws HaywardException {
+    }
+
     public State toState(String type, String channelID, String value) throws NumberFormatException {
         switch (type) {
             case "Number":
                 return new DecimalType(value);
             case "Switch":
-            case "system.power":
                 return Integer.parseInt(value) > 0 ? OnOffType.ON : OnOffType.OFF;
             case "Number:Dimensionless":
                 switch (channelID) {
-                    case "chlorTimedPercent":
-                    case "filterSpeed":
-                    case "pumpSpeed":
-                    case "filterLastSpeed":
-                        return new QuantityType<>(Integer.parseInt(value), Units.PERCENT);
-                    case "chlorAvgSaltLevel":
-                    case "chlorInstantSaltLevel":
+                    case HaywardBindingConstants.CHANNEL_CHLORINATOR_AVGSALTLEVEL:
                         return new QuantityType<>(Integer.parseInt(value), Units.PARTS_PER_MILLION);
+                    case HaywardBindingConstants.CHANNEL_CHLORINATOR_INSTANTSALTLEVEL:
+                        return new QuantityType<>(Integer.parseInt(value), Units.PARTS_PER_MILLION);
+                    case HaywardBindingConstants.CHANNEL_CHLORINATOR_TIMEDPERCENT:
+                        return new QuantityType<>(Integer.parseInt(value), Units.PERCENT);
+                    case HaywardBindingConstants.CHANNEL_FILTER_LASTSPEED:
+                        return new QuantityType<>(Integer.parseInt(value), Units.PERCENT);
+                    case HaywardBindingConstants.CHANNEL_FILTER_SPEEDPERCENT:
+                        return new QuantityType<>(Integer.parseInt(value), Units.PERCENT);
+                    case HaywardBindingConstants.CHANNEL_FILTER_SPEEDRPM:
+                    case HaywardBindingConstants.CHANNEL_PUMP_LASTSPEED:
+                        return new QuantityType<>(Integer.parseInt(value), Units.PERCENT);
+                    case HaywardBindingConstants.CHANNEL_PUMP_SPEEDPERCENT:
+                        return new QuantityType<>(Integer.parseInt(value), Units.PERCENT);
+                    case HaywardBindingConstants.CHANNEL_PUMP_SPEEDRPM:
                 }
                 return StringType.valueOf(value);
             case "Number:Temperature":
@@ -80,7 +93,7 @@ public abstract class HaywardThingHandler extends BaseThingHandler {
                 if (bridge != null) {
                     HaywardBridgeHandler bridgehandler = (HaywardBridgeHandler) bridge.getHandler();
                     if (bridgehandler != null) {
-                        if (bridgehandler.account.units.equals("Standard")) {
+                        if ("Standard".equals(bridgehandler.account.units)) {
                             return new QuantityType<>(Integer.parseInt(value), ImperialUnits.FAHRENHEIT);
                         } else {
                             return new QuantityType<>(Integer.parseInt(value), SIUnits.CELSIUS);
@@ -99,23 +112,26 @@ public abstract class HaywardThingHandler extends BaseThingHandler {
             return "0";
         } else if (command == OnOffType.ON) {
             return "1";
-        } else if (command instanceof DecimalType) {
-            return ((DecimalType) command).toString();
-        } else if (command instanceof QuantityType) {
-            return ((QuantityType<?>) command).format("%1.0f");
+        } else if (command instanceof DecimalType decimalCommand) {
+            return decimalCommand.toString();
+        } else if (command instanceof QuantityType quantityCommand) {
+            return quantityCommand.format("%1.0f");
         } else {
             return command.toString();
         }
     }
 
-    public void updateData(String channelID, String data) {
+    public Map<String, State> updateData(String channelID, String data) {
+        Map<String, State> channelStates = new HashMap<>();
         Channel chan = getThing().getChannel(channelID);
         if (chan != null) {
             String acceptedItemType = chan.getAcceptedItemType();
             if (acceptedItemType != null) {
                 State state = toState(acceptedItemType, channelID, data);
                 updateState(chan.getUID(), state);
+                channelStates.put(channelID, state);
             }
         }
+        return channelStates;
     }
 }

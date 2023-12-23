@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -15,9 +15,9 @@ package org.openhab.binding.haywardomnilogic.internal.handler;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +39,7 @@ import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.http.HttpVersion;
 import org.openhab.binding.haywardomnilogic.internal.HaywardAccount;
 import org.openhab.binding.haywardomnilogic.internal.HaywardBindingConstants;
+import org.openhab.binding.haywardomnilogic.internal.HaywardDynamicStateDescriptionProvider;
 import org.openhab.binding.haywardomnilogic.internal.HaywardException;
 import org.openhab.binding.haywardomnilogic.internal.HaywardThingHandler;
 import org.openhab.binding.haywardomnilogic.internal.HaywardTypeToRequest;
@@ -46,6 +47,7 @@ import org.openhab.binding.haywardomnilogic.internal.config.HaywardConfig;
 import org.openhab.binding.haywardomnilogic.internal.discovery.HaywardDiscoveryService;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.thing.Bridge;
+import org.openhab.core.thing.Channel;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
@@ -53,6 +55,7 @@ import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.binding.BaseBridgeHandler;
 import org.openhab.core.thing.binding.ThingHandlerService;
 import org.openhab.core.types.Command;
+import org.openhab.core.types.StateDescriptionFragment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.NodeList;
@@ -68,6 +71,7 @@ import org.xml.sax.InputSource;
 @NonNullByDefault
 public class HaywardBridgeHandler extends BaseBridgeHandler {
     private final Logger logger = LoggerFactory.getLogger(HaywardBridgeHandler.class);
+    private final HaywardDynamicStateDescriptionProvider stateDescriptionProvider;
     private final HttpClient httpClient;
     private @Nullable ScheduledFuture<?> initializeFuture;
     private @Nullable ScheduledFuture<?> pollTelemetryFuture;
@@ -78,12 +82,14 @@ public class HaywardBridgeHandler extends BaseBridgeHandler {
 
     @Override
     public Collection<Class<? extends ThingHandlerService>> getServices() {
-        return Collections.singleton(HaywardDiscoveryService.class);
+        return Set.of(HaywardDiscoveryService.class);
     }
 
-    public HaywardBridgeHandler(Bridge bridge, HttpClient httpClient) {
+    public HaywardBridgeHandler(HaywardDynamicStateDescriptionProvider stateDescriptionProvider, Bridge bridge,
+            HttpClient httpClient) {
         super(bridge);
         this.httpClient = httpClient;
+        this.stateDescriptionProvider = stateDescriptionProvider;
     }
 
     @Override
@@ -142,6 +148,18 @@ public class HaywardBridgeHandler extends BaseBridgeHandler {
                 return;
             }
 
+            if (logger.isTraceEnabled()) {
+                if (!(getApiDef())) {
+                    updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
+                            "Unable to getApiDef from Hayward's server");
+                    clearPolling(pollTelemetryFuture);
+                    clearPolling(pollAlarmsFuture);
+                    commFailureCount = 50;
+                    initPolling(60);
+                    return;
+                }
+            }
+
             if (this.thing.getStatus() != ThingStatus.ONLINE) {
                 updateStatus(ThingStatus.ONLINE);
             }
@@ -173,20 +191,23 @@ public class HaywardBridgeHandler extends BaseBridgeHandler {
         String status;
 
         // *****Login to Hayward server
-        String urlParameters = "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request>" + "<Name>Login</Name><Parameters>"
-                + "<Parameter name=\"UserName\" dataType=\"String\">" + config.username + "</Parameter>"
-                + "<Parameter name=\"Password\" dataType=\"String\">" + config.password + "</Parameter>"
-                + "</Parameters></Request>";
+        String urlParameters = """
+                <?xml version="1.0" encoding="utf-8"?><Request>\
+                <Name>Login</Name><Parameters>\
+                <Parameter name="UserName" dataType="String">\
+                """ + config.username + "</Parameter>" + "<Parameter name=\"Password\" dataType=\"String\">"
+                + config.password + "</Parameter>" + "</Parameters></Request>";
 
         xmlResponse = httpXmlResponse(urlParameters);
 
         if (xmlResponse.isEmpty()) {
+            logger.debug("Hayward Connection thing: Login XML response was null");
             return false;
         }
 
         status = evaluateXPath("/Response/Parameters//Parameter[@name='Status']/text()", xmlResponse).get(0);
 
-        if (!(status.equals("0"))) {
+        if (!("0".equals(status))) {
             logger.debug("Hayward Connection thing: Login XML response: {}", xmlResponse);
             return false;
         }
@@ -199,17 +220,19 @@ public class HaywardBridgeHandler extends BaseBridgeHandler {
     public synchronized boolean getApiDef() throws HaywardException, InterruptedException {
         String xmlResponse;
 
-        // *****getConfig from Hayward server
-        String urlParameters = "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><Name>GetAPIDef</Name><Parameters>"
-                + "<Parameter name=\"Token\" dataType=\"String\">" + account.token + "</Parameter>"
-                + "<Parameter name=\"MspSystemID\" dataType=\"int\">" + account.mspSystemID + "</Parameter>;"
+        // *****getApiDef from Hayward server
+        String urlParameters = """
+                <?xml version="1.0" encoding="utf-8"?><Request><Name>GetAPIDef</Name><Parameters>\
+                <Parameter name="Token" dataType="String">\
+                """ + account.token + "</Parameter>" + "<Parameter name=\"MspSystemID\" dataType=\"int\">"
+                + account.mspSystemID + "</Parameter>;"
                 + "<Parameter name=\"Version\" dataType=\"string\">0.4</Parameter >\r\n"
                 + "<Parameter name=\"Language\" dataType=\"string\">en</Parameter >\r\n" + "</Parameters></Request>";
 
         xmlResponse = httpXmlResponse(urlParameters);
 
         if (xmlResponse.isEmpty()) {
-            logger.debug("Hayward Connection thing: Login XML response was null");
+            logger.debug("Hayward Connection thing: getApiDef XML response was null");
             return false;
         }
         return true;
@@ -220,9 +243,10 @@ public class HaywardBridgeHandler extends BaseBridgeHandler {
         String status;
 
         // *****Get MSP
-        String urlParameters = "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><Name>GetSiteList</Name><Parameters>"
-                + "<Parameter name=\"Token\" dataType=\"String\">" + account.token
-                + "</Parameter><Parameter name=\"UserID\" dataType=\"String\">" + account.userID
+        String urlParameters = """
+                <?xml version="1.0" encoding="utf-8"?><Request><Name>GetSiteList</Name><Parameters>\
+                <Parameter name="Token" dataType="String">\
+                """ + account.token + "</Parameter><Parameter name=\"UserID\" dataType=\"String\">" + account.userID
                 + "</Parameter></Parameters></Request>";
 
         xmlResponse = httpXmlResponse(urlParameters);
@@ -234,7 +258,7 @@ public class HaywardBridgeHandler extends BaseBridgeHandler {
 
         status = evaluateXPath("/Response/Parameters//Parameter[@name='Status']/text()", xmlResponse).get(0);
 
-        if (!(status.equals("0"))) {
+        if (!("0".equals(status))) {
             logger.debug("Hayward Connection thing: getSiteList XML response: {}", xmlResponse);
             return false;
         }
@@ -250,26 +274,22 @@ public class HaywardBridgeHandler extends BaseBridgeHandler {
 
     public synchronized String getMspConfig() throws HaywardException, InterruptedException {
         // *****getMspConfig from Hayward server
-        String urlParameters = "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><Name>GetMspConfigFile</Name><Parameters>"
-                + "<Parameter name=\"Token\" dataType=\"String\">" + account.token + "</Parameter>"
-                + "<Parameter name=\"MspSystemID\" dataType=\"int\">" + account.mspSystemID
-                + "</Parameter><Parameter name=\"Version\" dataType=\"string\">0</Parameter>\r\n"
+        String urlParameters = """
+                <?xml version="1.0" encoding="utf-8"?><Request><Name>GetMspConfigFile</Name><Parameters>\
+                <Parameter name="Token" dataType="String">\
+                """ + account.token + "</Parameter>" + "<Parameter name=\"MspSystemID\" dataType=\"int\">"
+                + account.mspSystemID + "</Parameter><Parameter name=\"Version\" dataType=\"string\">0</Parameter>\r\n"
                 + "</Parameters></Request>";
 
         String xmlResponse = httpXmlResponse(urlParameters);
 
-        // Debug: Inject xml file for testing
-        // String path =
-        // "C:/Users/Controls/openhab-2-5-x/git/openhab-addons/bundles/org.openhab.binding.haywardomnilogic/getConfig.xml";
-        // xmlResponse = new String(Files.readAllBytes(Paths.get(path)));
-
         if (xmlResponse.isEmpty()) {
-            logger.debug("Hayward Connection thing: requestConfig XML response was null");
+            logger.debug("Hayward Connection thing: getMSPConfig XML response was null");
             return "Fail";
         }
 
         if (evaluateXPath("//Backyard/Name/text()", xmlResponse).isEmpty()) {
-            logger.debug("Hayward Connection thing: requestConfiguration XML response: {}", xmlResponse);
+            logger.debug("Hayward Connection thing: getMSPConfig XML response: {}", xmlResponse);
             return "Fail";
         }
         return xmlResponse;
@@ -280,6 +300,10 @@ public class HaywardBridgeHandler extends BaseBridgeHandler {
         List<String> property2 = new ArrayList<>();
 
         String xmlResponse = getMspConfig();
+
+        if (xmlResponse.contentEquals("Fail")) {
+            return false;
+        }
 
         // Get Units (Standard, Metric)
         property1 = evaluateXPath("//System/Units/text()", xmlResponse);
@@ -294,10 +318,11 @@ public class HaywardBridgeHandler extends BaseBridgeHandler {
 
     public synchronized boolean getTelemetryData() throws HaywardException, InterruptedException {
         // *****getTelemetry from Hayward server
-        String urlParameters = "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><Name>GetTelemetryData</Name><Parameters>"
-                + "<Parameter name=\"Token\" dataType=\"String\">" + account.token + "</Parameter>"
-                + "<Parameter name=\"MspSystemID\" dataType=\"int\">" + account.mspSystemID
-                + "</Parameter></Parameters></Request>";
+        String urlParameters = """
+                <?xml version="1.0" encoding="utf-8"?><Request><Name>GetTelemetryData</Name><Parameters>\
+                <Parameter name="Token" dataType="String">\
+                """ + account.token + "</Parameter>" + "<Parameter name=\"MspSystemID\" dataType=\"int\">"
+                + account.mspSystemID + "</Parameter></Parameters></Request>";
 
         String xmlResponse = httpXmlResponse(urlParameters);
 
@@ -419,54 +444,70 @@ public class HaywardBridgeHandler extends BaseBridgeHandler {
         String urlParameterslength = Integer.toString(urlParameters.length());
         String statusMessage;
 
-        try {
-            ContentResponse httpResponse = sendRequestBuilder(config.endpointUrl, HttpMethod.POST)
-                    .content(new StringContentProvider(urlParameters), "text/xml; charset=utf-8")
-                    .header(HttpHeader.CONTENT_LENGTH, urlParameterslength).send();
-
-            int status = httpResponse.getStatus();
-            String xmlResponse = httpResponse.getContentAsString();
-
-            if (status == 200) {
-                List<String> statusMessages = evaluateXPath(
-                        "/Response/Parameters//Parameter[@name='StatusMessage']/text()", xmlResponse);
-                if (!(statusMessages.isEmpty())) {
-                    statusMessage = statusMessages.get(0);
-                } else {
-                    statusMessage = httpResponse.getReason();
-                }
-
-                if (logger.isTraceEnabled()) {
-                    logger.trace("Hayward Connection thing:  {} Hayward http command: {}", getCallingMethod(),
-                            urlParameters);
-                    logger.trace("Hayward Connection thing:  {} Hayward http response: {} {}", getCallingMethod(),
-                            statusMessage, xmlResponse);
-                }
-                return xmlResponse;
-            } else {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Hayward Connection thing:  {} Hayward http command: {}", getCallingMethod(),
-                            urlParameters);
-                    logger.debug("Hayward Connection thing:  {} Hayward http response: {} {}", getCallingMethod(),
-                            status, xmlResponse);
-                }
-                return "";
-            }
-        } catch (ExecutionException e) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                    "Unable to resolve host.  Check Hayward hostname and your internet connection. " + e);
-            return "";
-        } catch (TimeoutException e) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                    "Connection Timeout.  Check Hayward hostname and your internet connection. " + e);
-            return "";
+        if (logger.isTraceEnabled()) {
+            logger.trace("Hayward Connection thing:  {} Hayward http command: {}", getCallingMethod(), urlParameters);
+        } else if (logger.isDebugEnabled()) {
+            logger.debug("Hayward Connection thing:  {}", getCallingMethod());
         }
+
+        for (int retry = 0; retry <= 2; retry++) {
+            try {
+                ContentResponse httpResponse = sendRequestBuilder(config.endpointUrl, HttpMethod.POST)
+                        .content(new StringContentProvider(urlParameters), "text/xml; charset=utf-8")
+                        .header(HttpHeader.CONTENT_LENGTH, urlParameterslength).send();
+
+                int status = httpResponse.getStatus();
+                String xmlResponse = httpResponse.getContentAsString();
+
+                if (status == 200) {
+                    List<String> statusMessages = evaluateXPath(
+                            "/Response/Parameters//Parameter[@name='StatusMessage']/text()", xmlResponse);
+                    if (!(statusMessages.isEmpty())) {
+                        statusMessage = statusMessages.get(0);
+                    } else {
+                        statusMessage = httpResponse.getReason();
+                    }
+
+                    if (logger.isTraceEnabled()) {
+                        logger.trace("Hayward Connection thing:  {} Hayward http response: {} {}", getCallingMethod(),
+                                statusMessage, xmlResponse);
+                    }
+                    return xmlResponse;
+                } else {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Hayward Connection thing:  {} Hayward http response: {} {}", getCallingMethod(),
+                                status, xmlResponse);
+                    }
+                    return "";
+                }
+            } catch (ExecutionException e) {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
+                        "Unable to resolve host.  Check Hayward hostname and your internet connection. "
+                                + e.getMessage());
+                return "";
+            } catch (TimeoutException e) {
+                if (retry >= 2) {
+                    updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
+                            "Connection Timeout.  Check Hayward hostname and your internet connection. "
+                                    + e.getMessage());
+                    return "";
+                } else {
+                    logger.warn("Hayward Connection thing Timeout:  {} Try:  {} ", getCallingMethod(), retry + 1);
+                }
+            }
+        }
+        return "";
     }
 
     private String getCallingMethod() {
         StackTraceElement[] stacktrace = Thread.currentThread().getStackTrace();
         StackTraceElement e = stacktrace[3];
         return e.getMethodName();
+    }
+
+    void updateChannelStateDescriptionFragment(Channel channel, StateDescriptionFragment descriptionFragment) {
+        ChannelUID channelId = channel.getUID();
+        stateDescriptionProvider.setStateDescriptionFragment(channelId, descriptionFragment);
     }
 
     public int convertCommand(Command command) {

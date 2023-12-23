@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -16,6 +16,7 @@ import static org.openhab.binding.pentair.internal.PentairBindingConstants.*;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Objects;
 
 import org.openhab.binding.pentair.internal.PentairBindingConstants;
 import org.openhab.binding.pentair.internal.PentairPacket;
@@ -97,8 +98,8 @@ public class PentairEasyTouchHandler extends PentairBaseThingHandler {
             return;
         }
 
-        if (command instanceof OnOffType) {
-            boolean state = ((OnOffType) command) == OnOffType.ON;
+        if (command instanceof OnOffType onOffCommand) {
+            boolean state = onOffCommand == OnOffType.ON;
 
             switch (channelUID.getId()) {
                 case EASYTOUCH_POOL:
@@ -153,8 +154,8 @@ public class PentairEasyTouchHandler extends PentairBaseThingHandler {
                     circuitSwitch(18, state);
                     break;
             }
-        } else if (command instanceof DecimalType) {
-            int sp = ((DecimalType) command).intValue();
+        } else if (command instanceof DecimalType decimalCommand) {
+            int sp = decimalCommand.intValue();
 
             switch (channelUID.getId()) {
                 case EASYTOUCH_SPASETPOINT:
@@ -186,7 +187,7 @@ public class PentairEasyTouchHandler extends PentairBaseThingHandler {
     /**
      * Method to set heat point for pool (true) of spa (false)
      *
-     * @param Pool pool=true, spa=false
+     * @param pool pool=true, spa=false
      * @param temp
      */
     public void setPoint(boolean pool, int temp) {
@@ -454,7 +455,7 @@ public class PentairEasyTouchHandler extends PentairBaseThingHandler {
                 }
                 break;
             case EASYTOUCH_SPAHEATMODESTR:
-                if (phsp == null || (phsp.spaheatmodestr != phspcur.spaheatmodestr)) {
+                if (phsp == null || (!Objects.equals(phsp.spaheatmodestr, phspcur.spaheatmodestr))) {
                     if (phspcur.spaheatmodestr != null) {
                         updateState(channel, new StringType(phspcur.spaheatmodestr));
                     }
@@ -466,7 +467,7 @@ public class PentairEasyTouchHandler extends PentairBaseThingHandler {
                 }
                 break;
             case EASYTOUCH_POOLHEATMODESTR:
-                if (phsp == null || (phsp.poolheatmodestr != phspcur.poolheatmodestr)) {
+                if (phsp == null || (!Objects.equals(phsp.poolheatmodestr, phspcur.poolheatmodestr))) {
                     if (phspcur.poolheatmodestr != null) {
                         updateState(channel, new StringType(phspcur.poolheatmodestr));
                     }

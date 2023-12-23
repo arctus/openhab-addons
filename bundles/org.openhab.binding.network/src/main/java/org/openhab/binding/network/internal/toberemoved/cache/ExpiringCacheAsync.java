@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -31,12 +31,12 @@ import org.eclipse.jdt.annotation.Nullable;
  */
 @NonNullByDefault
 public class ExpiringCacheAsync<V> {
-    final long expiry;
-    ExpiringCacheUpdate cacheUpdater;
+    private final long expiry;
+    private ExpiringCacheUpdate cacheUpdater;
     long expiresAt = 0;
-    boolean refreshRequested = false;
-    V value;
-    final List<Consumer<V>> waitingCacheCallbacks = new LinkedList<>();
+    private boolean refreshRequested = false;
+    private V value;
+    private final List<Consumer<V>> waitingCacheCallbacks = new LinkedList<>();
 
     /**
      * Implement the requestCacheUpdate method which will be called when the cache
@@ -51,7 +51,7 @@ public class ExpiringCacheAsync<V> {
      *
      * @param expiry the duration in milliseconds for how long the value stays valid. Must be greater than 0.
      * @param cacheUpdater The cache will use this callback if a new value is needed. Must not be null.
-     * @throws IllegalArgumentException For an expire value <=0 or a null cacheUpdater.
+     * @throws IllegalArgumentException For an expire value {@literal <=0} or a null cacheUpdater.
      */
     public ExpiringCacheAsync(long expiry, @Nullable ExpiringCacheUpdate cacheUpdater) throws IllegalArgumentException {
         if (expiry <= 0) {
@@ -67,7 +67,7 @@ public class ExpiringCacheAsync<V> {
     /**
      * Returns the value - possibly from the cache, if it is still valid.
      *
-     * @return the value
+     * @param callback callback to return the value
      */
     public void getValue(Consumer<V> callback) {
         if (isExpired()) {
@@ -114,7 +114,7 @@ public class ExpiringCacheAsync<V> {
      *
      * @return the new value
      */
-    public void refreshValue(Consumer<V> callback) {
+    private void refreshValue(Consumer<V> callback) {
         waitingCacheCallbacks.add(callback);
         if (refreshRequested) {
             return;

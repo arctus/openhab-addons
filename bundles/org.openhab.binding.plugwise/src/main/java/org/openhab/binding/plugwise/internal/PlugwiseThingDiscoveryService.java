@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -53,7 +53,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Discovers Plugwise devices by periodically reading the Circle+ node/MAC table with {@link RoleCallRequestMessage}s.
- * Sleeping end devices are discovered when they announce being awake with a {@link AnnounceAwakeRequestMessage}. To
+ * Sleeping end devices are discovered when they announce being awake with an {@link AnnounceAwakeRequestMessage}. To
  * reduce network traffic {@link InformationRequestMessage}s are only sent to undiscovered devices.
  *
  * @author Wouter Born, Karel Goderis - Initial contribution
@@ -133,7 +133,7 @@ public class PlugwiseThingDiscoveryService extends AbstractDiscoveryService
             ThingUID thingUID = new ThingUID(thingTypeUID, bridgeUID, mac);
 
             thingDiscovered(DiscoveryResultBuilder.create(thingUID).withBridge(bridgeUID)
-                    .withLabel("Plugwise " + node.deviceType.toString())
+                    .withLabel("Plugwise " + node.deviceType)
                     .withProperty(PlugwiseBindingConstants.CONFIG_PROPERTY_MAC_ADDRESS, mac)
                     .withProperties(new HashMap<>(node.properties))
                     .withRepresentationProperty(PlugwiseBindingConstants.PROPERTY_MAC_ADDRESS).build());
@@ -215,7 +215,7 @@ public class PlugwiseThingDiscoveryService extends AbstractDiscoveryService
     }
 
     @Override
-    public void handleReponseMessage(Message message) {
+    public void handleResponseMessage(Message message) {
         switch (message.getType()) {
             case ANNOUNCE_AWAKE_REQUEST:
                 handleAnnounceAwakeRequest((AnnounceAwakeRequestMessage) message);
@@ -289,8 +289,8 @@ public class PlugwiseThingDiscoveryService extends AbstractDiscoveryService
 
     @Override
     public void setThingHandler(ThingHandler handler) {
-        if (handler instanceof PlugwiseStickHandler) {
-            stickHandler = (PlugwiseStickHandler) handler;
+        if (handler instanceof PlugwiseStickHandler plugwiseStickHandler) {
+            stickHandler = plugwiseStickHandler;
             stickHandler.addStickStatusListener(this);
         }
     }

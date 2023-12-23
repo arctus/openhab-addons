@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -17,16 +17,13 @@ import static org.openhab.io.homekit.internal.HomekitCharacteristicType.TARGET_H
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import org.openhab.core.library.items.NumberItem;
-import org.openhab.core.library.items.StringItem;
 import org.openhab.core.library.types.DecimalType;
-import org.openhab.core.library.types.StringType;
 import org.openhab.io.homekit.internal.HomekitAccessoryUpdater;
 import org.openhab.io.homekit.internal.HomekitCharacteristicType;
 import org.openhab.io.homekit.internal.HomekitSettings;
@@ -37,6 +34,7 @@ import org.slf4j.LoggerFactory;
 import io.github.hapjava.accessories.ThermostatAccessory;
 import io.github.hapjava.characteristics.HomekitCharacteristicChangeCallback;
 import io.github.hapjava.characteristics.impl.thermostat.CurrentHeatingCoolingStateEnum;
+import io.github.hapjava.characteristics.impl.thermostat.CurrentTemperatureCharacteristic;
 import io.github.hapjava.characteristics.impl.thermostat.TargetHeatingCoolingStateEnum;
 import io.github.hapjava.characteristics.impl.thermostat.TargetTemperatureCharacteristic;
 import io.github.hapjava.characteristics.impl.thermostat.TemperatureDisplayUnitEnum;
@@ -63,23 +61,12 @@ class HomekitThermostatImpl extends AbstractHomekitAccessoryImpl implements Ther
     public HomekitThermostatImpl(HomekitTaggedItem taggedItem, List<HomekitTaggedItem> mandatoryCharacteristics,
             HomekitAccessoryUpdater updater, HomekitSettings settings) {
         super(taggedItem, mandatoryCharacteristics, updater, settings);
-        currentHeatingCoolingStateMapping = new EnumMap<>(CurrentHeatingCoolingStateEnum.class);
-        currentHeatingCoolingStateMapping.put(CurrentHeatingCoolingStateEnum.OFF, settings.thermostatCurrentModeOff);
-        currentHeatingCoolingStateMapping.put(CurrentHeatingCoolingStateEnum.COOL,
-                settings.thermostatCurrentModeCooling);
-        currentHeatingCoolingStateMapping.put(CurrentHeatingCoolingStateEnum.HEAT,
-                settings.thermostatCurrentModeHeating);
-        targetHeatingCoolingStateMapping = new EnumMap<>(TargetHeatingCoolingStateEnum.class);
-        targetHeatingCoolingStateMapping.put(TargetHeatingCoolingStateEnum.OFF, settings.thermostatTargetModeOff);
-        targetHeatingCoolingStateMapping.put(TargetHeatingCoolingStateEnum.COOL, settings.thermostatTargetModeCool);
-        targetHeatingCoolingStateMapping.put(TargetHeatingCoolingStateEnum.HEAT, settings.thermostatTargetModeHeat);
-        targetHeatingCoolingStateMapping.put(TargetHeatingCoolingStateEnum.AUTO, settings.thermostatTargetModeAuto);
         customCurrentHeatingCoolingStateList = new ArrayList<>();
         customTargetHeatingCoolingStateList = new ArrayList<>();
-        updateMapping(CURRENT_HEATING_COOLING_STATE, currentHeatingCoolingStateMapping,
-                customCurrentHeatingCoolingStateList);
-        updateMapping(TARGET_HEATING_COOLING_STATE, targetHeatingCoolingStateMapping,
-                customTargetHeatingCoolingStateList);
+        currentHeatingCoolingStateMapping = createMapping(CURRENT_HEATING_COOLING_STATE,
+                CurrentHeatingCoolingStateEnum.class, customCurrentHeatingCoolingStateList);
+        targetHeatingCoolingStateMapping = createMapping(TARGET_HEATING_COOLING_STATE,
+                TargetHeatingCoolingStateEnum.class, customTargetHeatingCoolingStateList);
         this.getServices().add(new ThermostatService(this));
     }
 
@@ -105,28 +92,37 @@ class HomekitThermostatImpl extends AbstractHomekitAccessoryImpl implements Ther
 
     @Override
     public CompletableFuture<Double> getCurrentTemperature() {
-        DecimalType state = getStateAs(HomekitCharacteristicType.CURRENT_TEMPERATURE, DecimalType.class);
-        return CompletableFuture.completedFuture(state != null ? convertToCelsius(state.doubleValue()) : 0.0);
+        Double state = getStateAsTemperature(HomekitCharacteristicType.CURRENT_TEMPERATURE);
+        return CompletableFuture.completedFuture(state != null ? state : getMinCurrentTemperature());
     }
 
     @Override
     public double getMinCurrentTemperature() {
-        return convertToCelsius(
+        // Apple defines default values in Celsius. We need to convert them to Fahrenheit if openHAB is using Fahrenheit
+        // convertToCelsius and convertFromCelsius are only converting if useFahrenheit is set to true, so no additional
+        // check here needed
+
+        return HomekitCharacteristicFactory.convertToCelsius(
                 getAccessoryConfiguration(HomekitCharacteristicType.CURRENT_TEMPERATURE, HomekitTaggedItem.MIN_VALUE,
-                        BigDecimal.valueOf(TargetTemperatureCharacteristic.DEFAULT_MIN_VALUE)).doubleValue());
+                        BigDecimal.valueOf(HomekitCharacteristicFactory
+                                .convertFromCelsius(CurrentTemperatureCharacteristic.DEFAULT_MIN_VALUE)))
+                        .doubleValue());
     }
 
     @Override
     public double getMaxCurrentTemperature() {
-        return convertToCelsius(
+        return HomekitCharacteristicFactory.convertToCelsius(
                 getAccessoryConfiguration(HomekitCharacteristicType.CURRENT_TEMPERATURE, HomekitTaggedItem.MAX_VALUE,
-                        BigDecimal.valueOf(TargetTemperatureCharacteristic.DEFAULT_MAX_VALUE)).doubleValue());
+                        BigDecimal.valueOf(HomekitCharacteristicFactory
+                                .convertFromCelsius(CurrentTemperatureCharacteristic.DEFAULT_MAX_VALUE)))
+                        .doubleValue());
     }
 
     @Override
     public double getMinStepCurrentTemperature() {
-        return getAccessoryConfiguration(HomekitCharacteristicType.CURRENT_TEMPERATURE, HomekitTaggedItem.STEP,
-                BigDecimal.valueOf(TargetTemperatureCharacteristic.DEFAULT_STEP)).doubleValue();
+        return HomekitCharacteristicFactory.getTemperatureStep(
+                getCharacteristic(HomekitCharacteristicType.CURRENT_TEMPERATURE).get(),
+                TargetTemperatureCharacteristic.DEFAULT_STEP);
     }
 
     @Override
@@ -138,7 +134,7 @@ class HomekitThermostatImpl extends AbstractHomekitAccessoryImpl implements Ther
     @Override
     public CompletableFuture<TemperatureDisplayUnitEnum> getTemperatureDisplayUnit() {
         return CompletableFuture
-                .completedFuture(getSettings().useFahrenheitTemperature ? TemperatureDisplayUnitEnum.FAHRENHEIT
+                .completedFuture(HomekitCharacteristicFactory.useFahrenheit() ? TemperatureDisplayUnitEnum.FAHRENHEIT
                         : TemperatureDisplayUnitEnum.CELSIUS);
     }
 
@@ -149,14 +145,14 @@ class HomekitThermostatImpl extends AbstractHomekitAccessoryImpl implements Ther
 
     @Override
     public CompletableFuture<Double> getTargetTemperature() {
-        DecimalType state = getStateAs(HomekitCharacteristicType.TARGET_TEMPERATURE, DecimalType.class);
-        return CompletableFuture.completedFuture(state != null ? convertToCelsius(state.doubleValue()) : 0.0);
+        Double state = getStateAsTemperature(HomekitCharacteristicType.TARGET_TEMPERATURE);
+        return CompletableFuture.completedFuture(state != null ? state : 0.0);
     }
 
     @Override
     public void setTargetState(TargetHeatingCoolingStateEnum mode) {
-        getItem(TARGET_HEATING_COOLING_STATE, StringItem.class)
-                .ifPresent(item -> item.send(new StringType(targetHeatingCoolingStateMapping.get(mode))));
+        HomekitCharacteristicFactory.setValueFromEnum(getCharacteristic(TARGET_HEATING_COOLING_STATE).get(), mode,
+                targetHeatingCoolingStateMapping);
     }
 
     @Override
@@ -165,7 +161,7 @@ class HomekitThermostatImpl extends AbstractHomekitAccessoryImpl implements Ther
                 HomekitCharacteristicType.TARGET_TEMPERATURE);
         if (characteristic.isPresent()) {
             ((NumberItem) characteristic.get().getItem())
-                    .send(new DecimalType(BigDecimal.valueOf(convertFromCelsius(value))));
+                    .send(new DecimalType(BigDecimal.valueOf(HomekitCharacteristicFactory.convertFromCelsius(value))));
         } else {
             logger.warn("Missing mandatory characteristic {}", HomekitCharacteristicType.TARGET_TEMPERATURE);
         }
@@ -173,22 +169,31 @@ class HomekitThermostatImpl extends AbstractHomekitAccessoryImpl implements Ther
 
     @Override
     public double getMinTargetTemperature() {
-        return convertToCelsius(
-                getAccessoryConfiguration(HomekitCharacteristicType.TARGET_TEMPERATURE, HomekitTaggedItem.MIN_VALUE,
-                        BigDecimal.valueOf(TargetTemperatureCharacteristic.DEFAULT_MIN_VALUE)).doubleValue());
+        return HomekitCharacteristicFactory
+                .convertToCelsius(
+                        getAccessoryConfiguration(HomekitCharacteristicType.TARGET_TEMPERATURE,
+                                HomekitTaggedItem.MIN_VALUE,
+                                BigDecimal.valueOf(HomekitCharacteristicFactory
+                                        .convertFromCelsius(TargetTemperatureCharacteristic.DEFAULT_MIN_VALUE)))
+                                .doubleValue());
     }
 
     @Override
     public double getMaxTargetTemperature() {
-        return convertToCelsius(
-                getAccessoryConfiguration(HomekitCharacteristicType.TARGET_TEMPERATURE, HomekitTaggedItem.MAX_VALUE,
-                        BigDecimal.valueOf(TargetTemperatureCharacteristic.DEFAULT_MAX_VALUE)).doubleValue());
+        return HomekitCharacteristicFactory
+                .convertToCelsius(
+                        getAccessoryConfiguration(HomekitCharacteristicType.TARGET_TEMPERATURE,
+                                HomekitTaggedItem.MAX_VALUE,
+                                BigDecimal.valueOf(HomekitCharacteristicFactory
+                                        .convertFromCelsius(TargetTemperatureCharacteristic.DEFAULT_MAX_VALUE)))
+                                .doubleValue());
     }
 
     @Override
     public double getMinStepTargetTemperature() {
-        return getAccessoryConfiguration(HomekitCharacteristicType.TARGET_TEMPERATURE, HomekitTaggedItem.STEP,
-                BigDecimal.valueOf(TargetTemperatureCharacteristic.DEFAULT_STEP)).doubleValue();
+        return HomekitCharacteristicFactory.getTemperatureStep(
+                getCharacteristic(HomekitCharacteristicType.TARGET_TEMPERATURE).get(),
+                TargetTemperatureCharacteristic.DEFAULT_STEP);
     }
 
     @Override

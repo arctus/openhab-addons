@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,8 +12,7 @@
  */
 package org.openhab.binding.mqtt.generic.values;
 
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -65,7 +64,7 @@ public class OnOffValue extends Value {
      */
     public OnOffValue(@Nullable String onState, @Nullable String offState, @Nullable String onCommand,
             @Nullable String offCommand) {
-        super(CoreItemFactory.SWITCH, Stream.of(OnOffType.class, StringType.class).collect(Collectors.toList()));
+        super(CoreItemFactory.SWITCH, List.of(OnOffType.class, StringType.class));
         this.onState = onState == null ? OnOffType.ON.name() : onState;
         this.offState = offState == null ? OnOffType.OFF.name() : offState;
         this.onCommand = onCommand == null ? OnOffType.ON.name() : onCommand;
@@ -73,29 +72,29 @@ public class OnOffValue extends Value {
     }
 
     @Override
-    public void update(Command command) throws IllegalArgumentException {
-        if (command instanceof OnOffType) {
-            state = (OnOffType) command;
+    public OnOffType parseCommand(Command command) throws IllegalArgumentException {
+        if (command instanceof OnOffType onOffCommand) {
+            return onOffCommand;
         } else {
             final String updatedValue = command.toString();
             if (onState.equals(updatedValue)) {
-                state = OnOffType.ON;
+                return OnOffType.ON;
             } else if (offState.equals(updatedValue)) {
-                state = OnOffType.OFF;
+                return OnOffType.OFF;
             } else {
-                state = OnOffType.valueOf(updatedValue);
+                return OnOffType.valueOf(updatedValue);
             }
         }
     }
 
     @Override
-    public String getMQTTpublishValue(@Nullable String pattern) {
+    public String getMQTTpublishValue(Command command, @Nullable String pattern) {
         String formatPattern = pattern;
         if (formatPattern == null) {
             formatPattern = "%s";
         }
 
-        return String.format(formatPattern, state == OnOffType.ON ? onCommand : offCommand);
+        return String.format(formatPattern, command == OnOffType.ON ? onCommand : offCommand);
     }
 
     @Override

@@ -8,7 +8,7 @@
 	<channel-type id="add" advanced="true">
 		<item-type>String</item-type>
 		<label>Add</label>
-		<description>Add the given Zone Player to the group of this Zone Player</description>
+		<description>Add the given Sonos device to the group of this Sonos device</description>
 	</channel-type>
 
 	<channel-type id="alarm" advanced="true">
@@ -43,6 +43,28 @@
 		<item-type>Switch</item-type>
 		<label>Clear Queue</label>
 		<description>Suppress all songs from the current queue</description>
+	</channel-type>
+
+	<channel-type id="codec" advanced="true">
+		<item-type>String</item-type>
+		<label>Codec</label>
+		<description>Name of codec currently being decoded</description>
+		<state readOnly="true">
+			<options>
+				<option value="noSignal">No Signal</option>
+				<option value="silence">Silence</option>
+				<option value="DTS">DTS</option>
+				<option value="Atmos">Dolby Atmos</option>
+				<option value="DD20">Dolby Digital 2.0</option>
+				<option value="PCM20">Dolby Multichannel PCM 2.0</option>
+				<option value="DD51">Dolby Digital 5.1</option>
+				<option value="DDPlus20">Dolby Digital Plus 2.0</option>
+				<option value="DDPlus51">Dolby Digital Plus 5.1</option>
+				<option value="TrueHD51">Dolby TrueHD 5.1</option>
+				<option value="PCM51">Dolby Multichannel PCM 5.1</option>
+				<option value="DTS51">DTS Surround 5.1</option>
+			</options>
+		</state>
 	</channel-type>
 
 	<channel-type id="coordinator" advanced="true">
@@ -100,16 +122,23 @@
 		<description>Play the given favorite entry. The favorite entry has to be predefined in the Sonos Controller app</description>
 	</channel-type>
 
+	<channel-type id="heightlevel" advanced="true">
+		<item-type>Number</item-type>
+		<label>Height Level</label>
+		<description>Set or get the height level adjustment</description>
+		<state min="-10" max="10" step="1" readOnly="false" pattern="%d"/>
+	</channel-type>
+
 	<channel-type id="led" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Led</label>
-		<description>Set or get the status of the white led on the front of the Zone Player</description>
+		<description>Set or get the status of the white led on the front of the Sonos device</description>
 	</channel-type>
 
 	<channel-type id="localcoordinator" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Local Coordinator</label>
-		<description>Indicator set to ON if this Zone Player is the Zone Group Coordinator</description>
+		<description>Indicator set to ON if this Sonos device is the Zone Group Coordinator</description>
 		<state readOnly="true"/>
 	</channel-type>
 
@@ -134,7 +163,7 @@
 	<channel-type id="playlist" advanced="true">
 		<item-type>String</item-type>
 		<label>Play Playlist</label>
-		<description>Play the given playlist. The playlist has to predefined in the Sonos Controller app</description>
+		<description>Play the given playlist. The playlist has to be predefined in the Sonos Controller app</description>
 	</channel-type>
 
 	<channel-type id="playqueue" advanced="true">
@@ -158,8 +187,8 @@
 	<channel-type id="publicaddress" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Public Address</label>
-		<description>Put all Zone Players in one group, and stream audio from the line-in from the Zone Player that triggered
-			the command</description>
+		<description>Put all Sonos devices in one group, and stream audio from the line-in from the Sonos device that
+			triggered the command</description>
 	</channel-type>
 
 	<channel-type id="radio" advanced="true">
@@ -171,7 +200,7 @@
 	<channel-type id="remove" advanced="true">
 		<item-type>String</item-type>
 		<label>Remove</label>
-		<description>Remove the given Zone Player from the group of this Zone Player</description>
+		<description>Remove the given Sonos device from the group of this Sonos device</description>
 	</channel-type>
 
 	<channel-type id="repeat" advanced="true">
@@ -190,25 +219,25 @@
 	<channel-type id="restore" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Restore</label>
-		<description>Restore the state of the Zone Player</description>
+		<description>Restore the state of the Sonos device</description>
 	</channel-type>
 
 	<channel-type id="restoreall" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Restore All</label>
-		<description>Restore the state of all the Zone Players</description>
+		<description>Restore the state of all the Sonos devices</description>
 	</channel-type>
 
 	<channel-type id="save" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Save</label>
-		<description>Save the state of the Zone Player</description>
+		<description>Save the state of the Sonos device</description>
 	</channel-type>
 
 	<channel-type id="saveall" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Save All</label>
-		<description>Save the state of all the Zone Players</description>
+		<description>Save the state of all the Sonos devices</description>
 	</channel-type>
 
 	<channel-type id="shuffle" advanced="true">
@@ -240,20 +269,19 @@
 	<channel-type id="standalone" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Stand Alone</label>
-		<description>Make the Zone Player leave its group and become a standalone Zone Player</description>
+		<description>Make the Sonos device leave its group and become a standalone player</description>
 	</channel-type>
 
 	<!-- The Sonos State Type -->
 	<channel-type id="state" advanced="true">
 		<item-type>String</item-type>
 		<label>State</label>
-		<description>The State channel contains state of the Zone Player, e.g. PLAYING, STOPPED,...</description>
+		<description>The State channel contains state of the Sonos device, e.g. PLAYING, STOPPED,...</description>
 		<state readOnly="true">
 			<options>
 				<option value="STOPPED">Stopped</option>
 				<option value="PLAYING">Playing</option>
 				<option value="PAUSED_PLAYBACK">Paused</option>
-				<option value="TRANSITIONING">Transitioning</option>
 			</options>
 		</state>
 	</channel-type>
@@ -261,7 +289,7 @@
 	<channel-type id="stop" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Stop</label>
-		<description>Stop the Zone Player. ON if the player is stopped.</description>
+		<description>Stop the Sonos device. ON if the player is stopped.</description>
 	</channel-type>
 
 	<channel-type id="treble" advanced="true">
@@ -325,14 +353,14 @@
 	<channel-type id="zonegroupid" advanced="true">
 		<item-type>String</item-type>
 		<label>Zone Group ID</label>
-		<description>Id of the Zone Group the Zone Player belongs to</description>
+		<description>Id of the Zone Group the Sonos device belongs to</description>
 		<state readOnly="true"/>
 	</channel-type>
 
 	<channel-type id="zonename">
 		<item-type>String</item-type>
 		<label>Zone Name</label>
-		<description>Name of the Zone Group associated to the Zone Player</description>
+		<description>Name of the Zone Group associated to the Sonos device</description>
 		<state readOnly="true"/>
 	</channel-type>
 
@@ -340,14 +368,14 @@
 	<channel-type id="linein" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Line-in Connected</label>
-		<description>Indicator set to ON when the line-in of the Zone Player is connected</description>
+		<description>Indicator set to ON when the line-in of the Sonos device is connected</description>
 		<state readOnly="true"/>
 	</channel-type>
 
 	<channel-type id="playlinein" advanced="true">
 		<item-type>String</item-type>
 		<label>Play Line-in</label>
-		<description>Play the line-in of the the Zone Player corresponding to the given UIN</description>
+		<description>Play the line-in of the the Sonos device corresponding to the given UIN</description>
 	</channel-type>
 
 	<!-- Extended channels (for SONOS Move only) -->

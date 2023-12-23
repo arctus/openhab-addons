@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,22 +12,15 @@
  */
 package org.openhab.binding.homeconnect.internal.client;
 
-import static java.util.Arrays.asList;
-import static java.util.Collections.singletonList;
 import static org.openhab.binding.homeconnect.internal.HomeConnectBindingConstants.*;
-import static org.openhab.binding.homeconnect.internal.client.HttpHelper.formatJsonBody;
-import static org.openhab.binding.homeconnect.internal.client.HttpHelper.getAuthorizationHeader;
-import static org.openhab.binding.homeconnect.internal.client.HttpHelper.parseString;
-import static org.openhab.binding.homeconnect.internal.client.HttpHelper.sendRequest;
+import static org.openhab.binding.homeconnect.internal.client.HttpHelper.*;
 
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -83,7 +76,6 @@ public class HomeConnectApiClient {
     private final Logger logger = LoggerFactory.getLogger(HomeConnectApiClient.class);
     private final HttpClient client;
     private final String apiUrl;
-    private final Map<String, List<AvailableProgramOption>> availableProgramOptionsCache;
     private final OAuthClientService oAuthClientService;
     private final CircularQueue<ApiRequest> communicationQueue;
     private final ApiBridgeConfiguration apiBridgeConfiguration;
@@ -94,7 +86,6 @@ public class HomeConnectApiClient {
         this.oAuthClientService = oAuthClientService;
         this.apiBridgeConfiguration = apiBridgeConfiguration;
 
-        availableProgramOptionsCache = new ConcurrentHashMap<>();
         apiUrl = simulated ? API_SIMULATOR_BASE_URL : API_BASE_URL;
         communicationQueue = new CircularQueue<>(COMMUNICATION_QUEUE_SIZE);
         if (apiRequestHistory != null) {
@@ -552,7 +543,7 @@ public class HomeConnectApiClient {
      * Get active program of device.
      *
      * @param haId home appliance id
-     * @return {@link Data} or null if there is no active program
+     * @return {@link Program} or null if there is no active program
      * @throws CommunicationException API communication exception
      * @throws AuthorizationException oAuth authorization exception
      * @throws ApplianceOfflineException appliance is not connected to the cloud
@@ -566,7 +557,7 @@ public class HomeConnectApiClient {
      * Get selected program of device.
      *
      * @param haId home appliance id
-     * @return {@link Data} or null if there is no selected program
+     * @return {@link Program} or null if there is no selected program
      * @throws CommunicationException API communication exception
      * @throws AuthorizationException oAuth authorization exception
      * @throws ApplianceOfflineException appliance is not connected to the cloud
@@ -622,25 +613,34 @@ public class HomeConnectApiClient {
         return getAvailablePrograms(haId, BASE_PATH + haId + "/programs/available");
     }
 
-    public List<AvailableProgramOption> getProgramOptions(String haId, String programKey)
+    /**
+     * Get the available options of a program.
+     *
+     * @param haId home appliance id
+     * @param programKey program id
+     * @return list of {@link AvailableProgramOption} or null if the program is unsupported by the API
+     * @throws CommunicationException API communication exception
+     * @throws AuthorizationException oAuth authorization exception
+     * @throws ApplianceOfflineException appliance is not connected to the cloud
+     */
+    public @Nullable List<AvailableProgramOption> getProgramOptions(String haId, String programKey)
             throws CommunicationException, AuthorizationException, ApplianceOfflineException {
-        if (availableProgramOptionsCache.containsKey(programKey)) {
-            logger.debug("Returning cached options for '{}'.", programKey);
-            List<AvailableProgramOption> availableProgramOptions = availableProgramOptionsCache.get(programKey);
-            return availableProgramOptions != null ? availableProgramOptions : Collections.emptyList();
-        }
-
         Request request = createRequest(HttpMethod.GET, BASE_PATH + haId + "/programs/available/" + programKey);
         try {
             ContentResponse response = sendRequest(request, apiBridgeConfiguration.getClientId());
-            checkResponseCode(HttpStatus.OK_200, request, response, haId, null);
+            checkResponseCode(List.of(HttpStatus.OK_200, HttpStatus.NOT_FOUND_404), request, response, haId, null);
 
             String responseBody = response.getContentAsString();
             trackAndLogApiRequest(haId, request, null, response, responseBody);
 
-            List<AvailableProgramOption> availableProgramOptions = mapToAvailableProgramOption(responseBody, haId);
-            availableProgramOptionsCache.put(programKey, availableProgramOptions);
-            return availableProgramOptions;
+            // Code 404 accepted only if the returned error is "SDK.Error.UnsupportedProgram"
+            if (response.getStatus() == HttpStatus.NOT_FOUND_404
+                    && (responseBody == null || !responseBody.contains("SDK.Error.UnsupportedProgram"))) {
+                throw new CommunicationException(HttpStatus.NOT_FOUND_404, response.getReason(),
+                        responseBody == null ? "" : responseBody);
+            }
+
+            return response.getStatus() == HttpStatus.OK_200 ? mapToAvailableProgramOption(responseBody, haId) : null;
         } catch (InterruptedException | TimeoutException | ExecutionException e) {
             logger.warn("Failed to get program options! haId={}, programKey={}, error={}", haId, programKey,
                     e.getMessage());
@@ -728,7 +728,7 @@ public class HomeConnectApiClient {
         Request request = createRequest(HttpMethod.GET, path);
         try {
             ContentResponse response = sendRequest(request, apiBridgeConfiguration.getClientId());
-            checkResponseCode(asList(HttpStatus.OK_200, HttpStatus.NOT_FOUND_404), request, response, haId, null);
+            checkResponseCode(List.of(HttpStatus.OK_200, HttpStatus.NOT_FOUND_404), request, response, haId, null);
 
             String responseBody = response.getContentAsString();
             trackAndLogApiRequest(haId, request, null, response, responseBody);
@@ -879,7 +879,7 @@ public class HomeConnectApiClient {
     private void checkResponseCode(int desiredCode, Request request, ContentResponse response, @Nullable String haId,
             @Nullable String requestPayload)
             throws CommunicationException, AuthorizationException, ApplianceOfflineException {
-        checkResponseCode(singletonList(desiredCode), request, response, haId, requestPayload);
+        checkResponseCode(List.of(desiredCode), request, response, haId, requestPayload);
     }
 
     private void checkResponseCode(List<Integer> desiredCodes, Request request, ContentResponse response,

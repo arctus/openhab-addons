@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -100,9 +100,6 @@ public class SocketChannelSession implements SocketSession {
 
     @Override
     public void addListener(SocketSessionListener listener) {
-        if (listener == null) {
-            throw new IllegalArgumentException("listener cannot be null");
-        }
         listeners.add(listener);
     }
 
@@ -166,10 +163,6 @@ public class SocketChannelSession implements SocketSession {
 
     @Override
     public synchronized void sendCommand(String command) throws IOException {
-        if (command == null) {
-            throw new IllegalArgumentException("command cannot be null");
-        }
-
         if (!isConnected()) {
             throw new IOException("Cannot send message - disconnected");
         }
@@ -319,6 +312,7 @@ public class SocketChannelSession implements SocketSession {
          * Stops the reader. Will wait 5 seconds for the runnable to stop (should stop within 1 second based on the poll
          * timeout below)
          */
+        @SuppressWarnings("PMD.CompareObjectsWithEquals")
         public void stopRunning() {
             if (isRunning.getAndSet(false)) {
                 // only wait if stopRunning didn't get called as part of processing a message
@@ -355,23 +349,23 @@ public class SocketChannelSession implements SocketSession {
                     final Object response = responses.poll(1, TimeUnit.SECONDS);
 
                     if (response != null) {
-                        if (response instanceof String) {
+                        if (response instanceof String stringResponse) {
                             try {
                                 logger.debug("Dispatching response: {}", response);
                                 final SocketSessionListener[] listeners = SocketChannelSession.this.listeners
                                         .toArray(new SocketSessionListener[0]);
                                 for (SocketSessionListener listener : listeners) {
-                                    listener.responseReceived((String) response);
+                                    listener.responseReceived(stringResponse);
                                 }
                             } catch (Exception e) {
                                 logger.warn("Exception occurred processing the response '{}': ", response, e);
                             }
-                        } else if (response instanceof Exception) {
+                        } else if (response instanceof Exception exceptionResponse) {
                             logger.debug("Dispatching exception: {}", response);
                             final SocketSessionListener[] listeners = SocketChannelSession.this.listeners
                                     .toArray(new SocketSessionListener[0]);
                             for (SocketSessionListener listener : listeners) {
-                                listener.responseException((Exception) response);
+                                listener.responseException(exceptionResponse);
                             }
                         } else {
                             logger.warn("Unknown response class: {}", response);

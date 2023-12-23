@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,9 +12,9 @@
  */
 package org.openhab.binding.openwebnet.internal.discovery;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -22,7 +22,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.openwebnet.OpenWebNetBindingConstants;
+import org.openhab.binding.openwebnet.internal.OpenWebNetBindingConstants;
 import org.openhab.core.config.discovery.AbstractDiscoveryService;
 import org.openhab.core.config.discovery.DiscoveryResult;
 import org.openhab.core.config.discovery.DiscoveryResultBuilder;
@@ -44,9 +44,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The {@link UsbGatewayDiscoveryService} extends {@link AbstractDiscoveryService} to detect ZigBee USB gateways
+ * The {@link UsbGatewayDiscoveryService} extends {@link AbstractDiscoveryService} to detect Zigbee USB gateways
  * connected via serial port. The service will iterate over the available serial ports and open each one to test if a
- * OpenWebNet ZigBee USB gateway is connected. On successful connection, a new DiscoveryResult is created.
+ * OpenWebNet Zigbee USB gateway is connected. On successful connection, a new DiscoveryResult is created.
  *
  * @author Massimo Valla - Initial contribution
  */
@@ -74,12 +74,11 @@ public class UsbGatewayDiscoveryService extends AbstractDiscoveryService impleme
     private boolean scanning;
 
     /**
-     * Constructs a new UsbGatewayDiscoveryService with the specified ZigBee USB Bridge ThingTypeUID
+     * Constructs a new UsbGatewayDiscoveryService with the specified Zigbee USB Bridge ThingTypeUID
      */
     @Activate
     public UsbGatewayDiscoveryService(final @Reference SerialPortManager spm) {
-        super(Collections.singleton(OpenWebNetBindingConstants.THING_TYPE_ZB_GATEWAY), DISCOVERY_TIMEOUT_SECONDS,
-                false);
+        super(Set.of(OpenWebNetBindingConstants.THING_TYPE_ZB_GATEWAY), DISCOVERY_TIMEOUT_SECONDS, false);
         // Obtain the serial port manager service using an OSGi reference
         serialPortManager = spm;
     }
@@ -89,7 +88,7 @@ public class UsbGatewayDiscoveryService extends AbstractDiscoveryService impleme
      */
     @Override
     protected void startScan() {
-        logger.debug("Started OpenWebNet ZigBee USB Gateway discovery scan");
+        logger.debug("Started OpenWebNet Zigbee USB Gateway discovery scan");
         removeOlderResults(getTimestampOfLastScan());
         scanning = true;
         Stream<SerialPortIdentifier> portEnum = serialPortManager.getIdentifiers();
@@ -103,7 +102,7 @@ public class UsbGatewayDiscoveryService extends AbstractDiscoveryService impleme
                         logger.debug("[{}] serial port is owned by: {}", currentScannedPortName,
                                 portIdentifier.getCurrentOwner());
                     } else {
-                        logger.debug("[{}] trying to connect to a ZigBee USB Gateway...", currentScannedPortName);
+                        logger.debug("[{}] trying to connect to a Zigbee USB Gateway...", currentScannedPortName);
                         USBGateway gw = new USBGateway(currentScannedPortName);
                         zbGateway = gw;
                         gw.subscribe(this);
@@ -117,7 +116,7 @@ public class UsbGatewayDiscoveryService extends AbstractDiscoveryService impleme
                             gw.connect();
                             portCheckLatch.await();
                         } catch (OWNException e) {
-                            logger.debug("[{}] OWNException while trying to connect to a ZigBee USB Gateway: {}",
+                            logger.debug("[{}] OWNException while trying to connect to a Zigbee USB Gateway: {}",
                                     currentScannedPortName, e.getMessage());
                             cancelConnectTimeout();
                             endGwConnection();
@@ -141,7 +140,7 @@ public class UsbGatewayDiscoveryService extends AbstractDiscoveryService impleme
         endGwConnection();
         portCheckLatch.countDown();
         super.stopScan();
-        logger.debug("Stopped OpenWebNet ZigBee USB Gateway discovery scan");
+        logger.debug("Stopped OpenWebNet Zigbee USB Gateway discovery scan");
     }
 
     /**
@@ -166,7 +165,7 @@ public class UsbGatewayDiscoveryService extends AbstractDiscoveryService impleme
     }
 
     /**
-     * Create and notify a new ZigBee USB Gateway thing has been discovered
+     * Create and notify a new Zigbee USB Gateway thing has been discovered
      */
     private void bridgeDiscovered() {
         USBGateway gw = zbGateway;
@@ -182,7 +181,7 @@ public class UsbGatewayDiscoveryService extends AbstractDiscoveryService impleme
             DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(gatewayUID).withProperties(gwProperties)
                     .withLabel(OpenWebNetBindingConstants.THING_LABEL_ZB_GATEWAY + " (" + gw.getSerialPortName() + ")")
                     .withRepresentationProperty(OpenWebNetBindingConstants.PROPERTY_ZIGBEEID).build();
-            logger.debug("--- ZigBee USB Gateway thing discovered: {} fw: {}", discoveryResult.getLabel(),
+            logger.debug("--- Zigbee USB Gateway thing discovered: {} fw: {}", discoveryResult.getLabel(),
                     gw.getFirmwareVersion());
             thingDiscovered(discoveryResult);
         }
@@ -190,7 +189,7 @@ public class UsbGatewayDiscoveryService extends AbstractDiscoveryService impleme
 
     @Override
     public void onConnected() {
-        logger.debug("[{}] found ZigBee USB Gateway", currentScannedPortName);
+        logger.debug("[{}] found Zigbee USB Gateway", currentScannedPortName);
         cancelConnectTimeout();
         bridgeDiscovered();
         endGwConnection();

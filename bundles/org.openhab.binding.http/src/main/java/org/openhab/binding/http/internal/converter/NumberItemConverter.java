@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -13,8 +13,6 @@
 package org.openhab.binding.http.internal.converter;
 
 import java.util.function.Consumer;
-
-import javax.measure.format.MeasurementParseException;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -62,7 +60,7 @@ public class NumberItemConverter extends AbstractTransformingItemConverter {
                         return new QuantityType<>(trimmedValue);
                     }
                 }
-            } catch (IllegalArgumentException | MeasurementParseException e) {
+            } catch (IllegalArgumentException e) {
                 // finally failed
             }
         }

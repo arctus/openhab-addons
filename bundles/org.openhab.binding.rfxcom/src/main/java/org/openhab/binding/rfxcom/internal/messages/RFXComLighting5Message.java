@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -21,7 +21,9 @@ import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.List;
 
+import org.openhab.binding.rfxcom.internal.config.RFXComDeviceConfiguration;
 import org.openhab.binding.rfxcom.internal.exceptions.RFXComException;
+import org.openhab.binding.rfxcom.internal.exceptions.RFXComInvalidStateException;
 import org.openhab.binding.rfxcom.internal.exceptions.RFXComUnsupportedChannelException;
 import org.openhab.binding.rfxcom.internal.exceptions.RFXComUnsupportedValueException;
 import org.openhab.binding.rfxcom.internal.handler.DeviceState;
@@ -234,7 +236,8 @@ public class RFXComLighting5Message extends RFXComDeviceMessageImpl<RFXComLighti
     }
 
     @Override
-    public State convertToState(String channelId, DeviceState deviceState) throws RFXComUnsupportedChannelException {
+    public State convertToState(String channelId, RFXComDeviceConfiguration config, DeviceState deviceState)
+            throws RFXComUnsupportedChannelException, RFXComInvalidStateException {
         switch (channelId) {
             case CHANNEL_MOOD:
                 switch (command) {
@@ -292,7 +295,7 @@ public class RFXComLighting5Message extends RFXComDeviceMessageImpl<RFXComLighti
                 }
 
             default:
-                return super.convertToState(channelId, deviceState);
+                return super.convertToState(channelId, config, deviceState);
         }
     }
 
@@ -334,9 +337,9 @@ public class RFXComLighting5Message extends RFXComDeviceMessageImpl<RFXComLighti
                     command = (type == OnOffType.ON ? Commands.ON : Commands.OFF);
                     dimmingLevel = 0;
 
-                } else if (type instanceof PercentType) {
+                } else if (type instanceof PercentType percentCommand) {
                     command = Commands.SET_LEVEL;
-                    dimmingLevel = (byte) getDimLevelFromPercentType((PercentType) type);
+                    dimmingLevel = (byte) getDimLevelFromPercentType(percentCommand);
 
                     if (dimmingLevel == 0) {
                         command = Commands.OFF;

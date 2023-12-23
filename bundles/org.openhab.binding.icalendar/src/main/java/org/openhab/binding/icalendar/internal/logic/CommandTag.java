@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -36,18 +36,22 @@ import org.slf4j.LoggerFactory;
  * This is a class that implements a Command Tag that may be embedded in an
  * Event Description. Valid Tags must follow one of the following forms..
  *
+ * <pre>
+ * {@code
  * BEGIN:<itemName>:<targetState>
  * BEGIN:<itemName>:<targetState>:<authorizationCode>
  * END:<itemName>:<targetState>
  * END:<itemName>:<targetState>:<authorizationCode>
+ * }
+ * </pre>
  *
  * @author Andrew Fiddian-Green - Initial contribution
  */
 @NonNullByDefault
 public class CommandTag {
 
-    private static final List<Class<? extends Command>> otherCommandTypes = Arrays.asList(DecimalType.class,
-            QuantityType.class, OnOffType.class, OpenClosedType.class, UpDownType.class, HSBType.class,
+    private static final List<Class<? extends Command>> otherCommandTypes = Arrays.asList(HSBType.class,
+            DecimalType.class, QuantityType.class, OnOffType.class, OpenClosedType.class, UpDownType.class,
             PlayPauseType.class, RewindFastforwardType.class, StringType.class);
 
     private static final List<Class<? extends Command>> percentCommandType = Arrays.asList(PercentType.class);

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2021 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -50,6 +50,7 @@ import org.openhab.binding.ihc.internal.ws.datatypes.WSSystemInfo;
 import org.openhab.binding.ihc.internal.ws.datatypes.WSTimeManagerSettings;
 import org.openhab.binding.ihc.internal.ws.exeptions.ConversionException;
 import org.openhab.binding.ihc.internal.ws.exeptions.IhcExecption;
+import org.openhab.binding.ihc.internal.ws.exeptions.IhcFatalExecption;
 import org.openhab.binding.ihc.internal.ws.projectfile.IhcEnumValue;
 import org.openhab.binding.ihc.internal.ws.projectfile.ProjectFileUtils;
 import org.openhab.binding.ihc.internal.ws.resourcevalues.WSBooleanValue;
@@ -180,6 +181,9 @@ public class IhcHandler extends BaseThingHandler implements IhcEventListener {
         linkedResourceIds.addAll(getAllLinkedChannelsResourceIds());
         logger.debug("Linked resources {}: {}", linkedResourceIds.size(), linkedResourceIds);
 
+        updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE,
+                "Initializing communication to the IHC / ELKO controller");
+
         if (controlJob == null || controlJob.isCancelled()) {
             logger.debug("Start control task, interval={}sec", 1);
             controlJob = scheduler.scheduleWithFixedDelay(this::reconnectCheck, 0, 1, TimeUnit.SECONDS);
@@ -201,13 +205,18 @@ public class IhcHandler extends BaseThingHandler implements IhcEventListener {
         logger.debug("Received channel: {}, command: {}", channelUID, command);
 
         if (ihc == null) {
-            logger.warn("Connection is not initialized, abort resource value update for channel '{}'!", channelUID);
+            logger.debug("Connection is not initialized, aborting resource value update for channel '{}'!", channelUID);
             return;
         }
 
         if (ihc.getConnectionState() != ConnectionState.CONNECTED) {
-            logger.warn("Connection to controller is not open, abort resource value update for channel '{}'!",
+            logger.debug("Connection to controller is not open, aborting resource value update for channel '{}'!",
                     channelUID);
+            return;
+        }
+
+        if (thing.getStatus() != ThingStatus.ONLINE) {
+            logger.debug("Controller is not ONLINE, aborting resource value update for channel '{}'!", channelUID);
             return;
         }
 
@@ -402,8 +411,8 @@ public class IhcHandler extends BaseThingHandler implements IhcEventListener {
     }
 
     private List<IhcEnumValue> getEnumValues(WSResourceValue value) {
-        if (value instanceof WSEnumValue) {
-            return enumDictionary.getEnumValues(((WSEnumValue) value).definitionTypeID);
+        if (value instanceof WSEnumValue enumValue) {
+            return enumDictionary.getEnumValues(enumValue.definitionTypeID);
         }
         return null;
     }
@@ -534,10 +543,8 @@ public class IhcHandler extends BaseThingHandler implements IhcEventListener {
             setConnectingState(true);
             logger.debug("Connecting to IHC / ELKO LS controller [hostname='{}', username='{}'].", conf.hostname,
                     conf.username);
-            ihc = new IhcClient(conf.hostname, conf.username, conf.password, conf.timeout);
+            ihc = new IhcClient(conf.hostname, conf.username, conf.password, conf.timeout, conf.tlsVersion);
             ihc.openConnection();
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.NONE,
-                    "Initializing communication to the IHC / ELKO controller");
             loadProject();
             createChannels();
             updateControllerProperties();
@@ -757,8 +764,8 @@ public class IhcHandler extends BaseThingHandler implements IhcEventListener {
     }
 
     private void checkPotentialButtonPresses(WSResourceValue value) {
-        if (value instanceof WSBooleanValue) {
-            if (((WSBooleanValue) value).value) {
+        if (value instanceof WSBooleanValue booleanValue) {
+            if (booleanValue.value) {
                 // potential button press
                 lastUpdate.put(value.resourceID, LocalDateTime.now());
                 updateTriggers(value.resourceID, Duration.ZERO);
@@ -883,6 +890,11 @@ public class IhcHandler extends BaseThingHandler implements IhcEventListener {
                 }
                 connect();
                 setReconnectRequest(false);
+            } catch (IhcFatalExecption e) {
+                logger.warn("Can't open connection to controller {}", e.getMessage());
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
+                setReconnectRequest(false);
+                return;
             } catch (IhcExecption e) {
                 logger.debug("Can't open connection to controller {}", e.getMessage());
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
